@@ -1,0 +1,228 @@
+// IqraaPay Database Schema
+// SQLite for development, PostgreSQL for production
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// Note: SQLite doesn't support enums, so we use String with validation in code
+// ============================================
+
+enum Gender {
+  male
+  female
+}
+
+enum StudentStatus {
+  active
+  paused
+  withdrawn
+  graduated
+}
+
+enum PaymentPlan {
+  six_month
+  monthly
+  forgiven
+  custom
+}
+
+enum EnrollmentStatus {
+  active
+  completed
+  cancelled
+}
+
+enum PaymentMethod {
+  cash
+  bank_transfer
+  other
+}
+
+enum AdminRole {
+  admin
+  super_admin
+}
+
+// ============================================
+// CORE MODELS
+// ============================================
+
+model Family {
+  id                  String   @id @default(uuid())
+  familyName          String   @map("family_name")
+  primaryContactName  String   @map("primary_contact_name")
+  primaryPhone        String   @map("primary_phone")
+  secondaryPhone      String?  @map("secondary_phone")
+  address             String?
+  notes               String?
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  students Student[]
+
+  @@map("families")
+}
+
+model Student {
+  id              String        @id @default(uuid())
+  familyId        String        @map("family_id")
+  firstName       String        @map("first_name")
+  lastName        String        @map("last_name")
+  gender          Gender
+  dateOfBirth     DateTime?     @map("date_of_birth") @db.Date
+  classTime       String?       @map("class_time")
+  classGroup      String?       @map("class_group")
+  enrollmentDate  DateTime      @map("enrollment_date") @db.Date
+  status          StudentStatus @default(active)
+  paymentPlan     PaymentPlan   @default(six_month) @map("payment_plan")
+  customAmount    Int?          @map("custom_amount") // In IQD, for custom plan
+  notes           String?
+  googleSheetRowId String?      @map("google_sheet_row_id")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  // Relations
+  family      Family       @relation(fields: [familyId], references: [id])
+  enrollments Enrollment[]
+  payments    Payment[]
+
+  @@index([familyId])
+  @@index([status])
+  @@index([classGroup])
+  @@index([paymentPlan])
+  @@map("students")
+}
+
+model Enrollment {
+  id              String           @id @default(uuid())
+  studentId       String           @map("student_id")
+  courseCode      String           @map("course_code") // e.g., "2026A", "2026B"
+  courseStart     DateTime         @map("course_start") @db.Date
+  courseEnd       DateTime         @map("course_end") @db.Date
+  enrollmentDate  DateTime         @map("enrollment_date") @db.Date
+  paymentPlan     PaymentPlan      @map("payment_plan")
+  baseAmount      Int              @map("base_amount") // Full amount before proration
+  proratedAmount  Int              @map("prorated_amount") // Actual amount due
+  amountPaid      Int              @default(0) @map("amount_paid")
+  isFullyPaid     Boolean          @default(false) @map("is_fully_paid")
+  nextDueDate     DateTime?        @map("next_due_date") @db.Date
+  status          EnrollmentStatus @default(active)
+  notes           String?
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+
+  // Relations
+  student  Student   @relation(fields: [studentId], references: [id])
+  payments Payment[]
+
+  @@unique([studentId, courseCode])
+  @@index([courseCode])
+  @@index([isFullyPaid])
+  @@index([nextDueDate])
+  @@index([status])
+  @@map("enrollments")
+}
+
+model Payment {
+  id            String        @id @default(uuid())
+  enrollmentId  String        @map("enrollment_id")
+  studentId     String        @map("student_id")
+  amount        Int           // In IQD
+  paymentDate   DateTime      @map("payment_date") @db.Date
+  paymentMethod PaymentMethod @map("payment_method")
+  receiptNumber String?       @map("receipt_number")
+  notes         String?
+  recordedBy    String        @map("recorded_by") // Admin ID
+  createdAt     DateTime      @default(now()) @map("created_at")
+  
+  // Void tracking
+  voided        Boolean       @default(false)
+  voidedBy      String?       @map("voided_by")
+  voidedAt      DateTime?     @map("voided_at")
+  voidReason    String?       @map("void_reason")
+
+  // Relations
+  enrollment    Enrollment    @relation(fields: [enrollmentId], references: [id])
+  student       Student       @relation(fields: [studentId], references: [id])
+  admin         Admin         @relation("RecordedPayments", fields: [recordedBy], references: [id])
+  voidAdmin     Admin?        @relation("VoidedPayments", fields: [voidedBy], references: [id])
+
+  @@index([enrollmentId])
+  @@index([studentId])
+  @@index([paymentDate])
+  @@index([voided])
+  @@map("payments")
+}
+
+model Admin {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  passwordHash String    @map("password_hash")
+  fullName     String    @map("full_name")
+  role         AdminRole @default(admin)
+  isActive     Boolean   @default(true) @map("is_active")
+  lastLogin    DateTime? @map("last_login")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  createdBy    String?   @map("created_by")
+
+  // Relations
+  recordedPayments Payment[]  @relation("RecordedPayments")
+  voidedPayments   Payment[]  @relation("VoidedPayments")
+  auditLogs        AuditLog[]
+  createdByAdmin   Admin?     @relation("AdminCreator", fields: [createdBy], references: [id])
+  createdAdmins    Admin[]    @relation("AdminCreator")
+
+  @@map("admins")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  adminId    String   @map("admin_id")
+  action     String   // e.g., "PAYMENT_RECORDED", "STUDENT_UPDATED"
+  entityType String   @map("entity_type") // e.g., "payment", "student"
+  entityId   String   @map("entity_id")
+  oldValues  Json?    @map("old_values")
+  newValues  Json?    @map("new_values")
+  ipAddress  String?  @map("ip_address")
+  userAgent  String?  @map("user_agent")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  // Relations
+  admin Admin @relation(fields: [adminId], references: [id])
+
+  @@index([adminId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@index([action])
+  @@map("audit_logs")
+}
+
+// ============================================
+// SYSTEM CONFIGURATION
+// ============================================
+
+model SystemConfig {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  value     Json
+  updatedAt DateTime @updatedAt @map("updated_at")
+  updatedBy String?  @map("updated_by")
+
+  @@map("system_config")
+}
+
+// Store course definitions and pricing
+// Example keys:
+// - "pricing.six_month.standard" -> 25000
+// - "pricing.six_month.sibling" -> 20000
+// - "pricing.monthly" -> 5000
+// - "course.2026A" -> { "start": "2026-01-01", "end": "2026-06-30" }
+// - "course.2026B" -> { "start": "2026-07-01", "end": "2026-12-31" }

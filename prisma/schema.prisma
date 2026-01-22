@@ -1,0 +1,126 @@
+// IqraaPay Database Schema - Simplified
+// SQLite for development, PostgreSQL for production
+// No family relationships - siblings handled manually by admin
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// CLASS TIMES (8 different class periods)
+// ============================================
+// saturday_morning, saturday_evening, saturday_night
+// monday_evening, tuesday_night
+// wednesday_evening, wednesday_night
+// thursday_night
+
+// ============================================
+// SIMPLIFIED MODELS
+// ============================================
+
+model Student {
+  id              String    @id @default(uuid())
+  name            String    // Full name (ناوی سیانی)
+  nameNormalized  String?   @map("name_normalized") // Normalized for search
+  gender          String    // "male" or "female" (کوڕ/کچ)
+  birthYear       String?   @map("birth_year") // Year only (لەدایکبوون)
+  address         String?   // (ناونيشان)
+  phone           String?   // (ژمارەی مۆبایل)
+  financialStatus String?   @map("financial_status") // (بارى دارايى)
+  classTime       String?   @map("class_time") // e.g., "saturday_morning"
+  classGroup      String?   @map("class_group") // Class grouping within time
+  joinDate        DateTime? @map("join_date") // When student joined
+  notes           String?   // Admin notes
+  status          String    @default("active") // "active", "inactive"
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  payments Payment[]
+
+  @@map("students")
+}
+
+model Payment {
+  id              String    @id @default(uuid())
+  studentId       String    @map("student_id")
+  amount          Int       // Amount in IQD
+  paymentDate     DateTime  @map("payment_date")
+  paymentType     String    @map("payment_type") // "single", "sibling", "monthly", "donation", "scholarship"
+  
+  // Subscription period
+  periodStart     DateTime  @map("period_start") // e.g., 2026-01-01
+  periodEnd       DateTime  @map("period_end") // e.g., 2026-07-01
+  monthsCount     Int       @default(6) @map("months_count") // Number of months paid for
+  
+  // Sibling payment tracking
+  siblingNames    String?   @map("sibling_names") // For sibling payments, store names
+  siblingStudentId String?  @map("sibling_student_id") // ID of sibling student
+  siblingPaymentId String?  @map("sibling_payment_id") // Links to related sibling payment
+  
+  notes           String?
+  recordedBy      String    @map("recorded_by") // Admin ID
+  recordedByName  String?   @map("recorded_by_name") // Admin name for display
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  // Void tracking
+  voided          Boolean   @default(false)
+  voidedBy        String?   @map("voided_by")
+  voidedAt        DateTime? @map("voided_at")
+  voidReason      String?   @map("void_reason")
+
+  // Relations
+  student         Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@map("payments")
+}
+
+model Admin {
+  id                String    @id @default(uuid())
+  email             String    @unique
+  passwordHash      String    @map("password_hash")
+  fullName          String    @map("full_name")
+  role              String    @default("admin") // "admin", "super_admin"
+  assignedClassTimes String?  @map("assigned_class_times") // Comma-separated: "saturday_morning,saturday_evening"
+  isActive          Boolean   @default(true) @map("is_active")
+  lastLogin         DateTime? @map("last_login")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  createdBy         String?   @map("created_by")
+
+  // Relations
+  auditLogs        AuditLog[]
+  createdByAdmin   Admin?     @relation("AdminCreator", fields: [createdBy], references: [id])
+  createdAdmins    Admin[]    @relation("AdminCreator")
+
+  @@map("admins")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  adminId    String   @map("admin_id")
+  action     String
+  entityType String   @map("entity_type")
+  entityId   String   @map("entity_id")
+  details    String?  // JSON string
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  // Relations
+  admin Admin @relation(fields: [adminId], references: [id])
+
+  @@map("audit_logs")
+}
+
+model SystemConfig {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  value     String   // JSON string
+  updatedAt DateTime @updatedAt @map("updated_at")
+  updatedBy String?  @map("updated_by")
+
+  @@map("system_config")
+}
