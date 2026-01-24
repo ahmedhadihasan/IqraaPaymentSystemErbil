@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Users, CreditCard, TrendingUp, AlertCircle, Download, Calendar, UserCheck, UsersRound, Eye } from 'lucide-react';
+import { Users, CreditCard, TrendingUp, AlertCircle, Download, Calendar, UserCheck, UsersRound, Eye, ArrowRight } from 'lucide-react';
 import { ku, formatIQD } from '@/lib/translations';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
@@ -181,24 +181,27 @@ export default function DashboardPage() {
         </div>
 
         {/* Sibling Payments Today */}
-        <div className="mobile-card col-span-2 bg-purple-50 border border-purple-200">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-purple-100 rounded-xl flex items-center justify-center">
-              <UsersRound className="w-5 h-5 text-purple-600" />
-            </div>
-            <div className="flex-1">
-              <p className="text-purple-800 font-medium">پارەدانی خوشک و برا (ئەمڕۆ)</p>
-              <div className="flex gap-4 mt-1">
-                <span className="text-sm text-purple-600">
-                  {data?.siblingPaymentsCount || 0} پارەدان
-                </span>
-                <span className="text-sm font-bold text-purple-700">
-                  {formatIQD(data?.siblingPaymentsAmount || 0)}
-                </span>
+        <Link href="/dashboard/payments/siblings" className="col-span-2">
+          <div className="mobile-card bg-purple-50 border border-purple-200 active:bg-purple-100 transition-colors">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-purple-100 rounded-xl flex items-center justify-center">
+                <UsersRound className="w-5 h-5 text-purple-600" />
               </div>
+              <div className="flex-1">
+                <p className="text-purple-800 font-medium">پارەدانی خوشک و برا (ئەمڕۆ)</p>
+                <div className="flex gap-4 mt-1">
+                  <span className="text-sm text-purple-600">
+                    {data?.siblingPaymentsCount || 0} پارەدان
+                  </span>
+                  <span className="text-sm font-bold text-purple-700">
+                    {formatIQD(data?.siblingPaymentsAmount || 0)}
+                  </span>
+                </div>
+              </div>
+              <ArrowRight className="w-5 h-5 text-purple-400 rotate-180" />
             </div>
           </div>
-        </div>
+        </Link>
       </div>
 
       {/* Super Admin: Collection by Admin */}
@@ -251,64 +254,6 @@ export default function DashboardPage() {
           )}
         </div>
       )}
-
-      {/* Quick Actions */}
-      <div>
-        <h2 className="text-lg font-bold text-gray-900 mb-3">کردارە خێراکان</h2>
-        <div className="grid grid-cols-2 gap-3">
-          <Link 
-            href="/dashboard/students" 
-            className="mobile-card flex flex-col items-center justify-center py-6 active:bg-gray-50"
-          >
-            <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center mb-2">
-              <Users className="w-6 h-6 text-blue-600" />
-            </div>
-            <span className="font-medium text-gray-900">{ku.nav.students}</span>
-          </Link>
-          
-          <Link 
-            href="/dashboard/payments" 
-            className="mobile-card flex flex-col items-center justify-center py-6 active:bg-gray-50"
-          >
-            <div className="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center mb-2">
-              <CreditCard className="w-6 h-6 text-green-600" />
-            </div>
-            <span className="font-medium text-gray-900">{ku.nav.payments}</span>
-          </Link>
-        </div>
-      </div>
-
-      {/* View All Students Section - For quick payment access */}
-      <div className="mobile-card">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="font-bold text-gray-900 flex items-center gap-2">
-            <Eye className="w-5 h-5 text-primary" />
-            بینینی هەموو قوتابیان
-          </h3>
-        </div>
-        <p className="text-sm text-gray-500 mb-3">
-          بۆ زیادکردنی پارەدان، قوتابییەک هەڵبژێرە لە لیستی قوتابیان
-        </p>
-        <Link href="/dashboard/students?showPayment=true">
-          <Button className="w-full" variant="outline">
-            <Users className="w-5 h-5 ml-2" />
-            بچۆ بۆ لیستی قوتابیان
-          </Button>
-        </Link>
-      </div>
-
-      {/* CSV Export Button */}
-      <div className="mobile-card">
-        <Button 
-          onClick={handleExportCSV}
-          disabled={isExporting}
-          className="w-full flex items-center justify-center gap-2"
-          variant="outline"
-        >
-          <Download className="w-5 h-5" />
-          {isExporting ? ku.common.loading : ku.dashboard.downloadCSV}
-        </Button>
-      </div>
 
       {/* Recent Payments */}
       <div>

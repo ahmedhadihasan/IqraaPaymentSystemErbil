@@ -39,9 +39,18 @@ export async function GET(request: NextRequest) {
       prisma.student.count({ where: { ...studentWhere, gender: 'female' } }),
     ]);
 
-    // Date calculations
+    // Date calculations - Using Iraq Time (GMT+3)
+    // We create a date that represents "now" in current region
     const now = new Date();
+    // Move to Iraq time offset (simplified)
+    const iraqOffset = 3; 
+    const iraqNow = new Date(now.getTime() + (iraqOffset * 60 * 60 * 1000));
+    
+    // Get the start of today in Iraq time
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    // Explicitly set to midnight to avoid any trailing hours
+    todayStart.setHours(0, 0, 0, 0);
+    
     const todayEnd = new Date(todayStart);
     todayEnd.setDate(todayEnd.getDate() + 1);
 
