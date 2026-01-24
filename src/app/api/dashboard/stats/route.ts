@@ -219,6 +219,7 @@ export async function GET(request: NextRequest) {
         where: {
           paymentDate: dateFilter,
           voided: false,
+          siblingPaymentId: null, // Avoid double-counting siblings in totals
         },
         _sum: { amount: true },
       });
@@ -231,6 +232,7 @@ export async function GET(request: NextRequest) {
         paymentType: 'family',
         voided: false,
         paymentDate: { gte: todayStart, lt: todayEnd },
+        siblingPaymentId: null, // Only count root payment to avoid double counting siblings
       },
       include: { student: true },
       orderBy: { createdAt: 'desc' },
@@ -244,6 +246,7 @@ export async function GET(request: NextRequest) {
       where: {
         paymentDate: { gte: todayStart, lt: todayEnd },
         voided: false,
+        siblingPaymentId: null, // Only show root payments in general list
       },
       include: { student: true },
       orderBy: { createdAt: 'desc' },

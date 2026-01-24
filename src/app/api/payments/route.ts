@@ -139,7 +139,17 @@ export async function GET(request: NextRequest) {
       createdAt: p.createdAt.toISOString(),
     }));
 
-    return NextResponse.json(result);
+    // Calculate true total matching all filters
+    const totalPayments = await prisma.payment.aggregate({
+      where,
+      _sum: { amount: true }
+    });
+    const totalAmount = totalPayments._sum.amount || 0;
+
+    return NextResponse.json({
+      payments: result,
+      totalAmount
+    });
   } catch (error) {
     console.error('Error fetching payments:', error);
     return NextResponse.json(

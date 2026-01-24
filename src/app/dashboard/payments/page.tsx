@@ -41,7 +41,11 @@ async function fetchPayments(params: { search?: string; type?: string }) {
   
   const res = await fetch(`/api/payments?${query.toString()}`);
   if (!res.ok) throw new Error('Failed to fetch payments');
-  return res.json();
+  const data = await res.json();
+  return {
+    payments: data.payments || [],
+    totalAmount: data.totalAmount || 0
+  };
 }
 
 const paymentTypeIcons: Record<string, typeof User> = {
@@ -64,13 +68,13 @@ export default function PaymentsPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [showRecordModal, setShowRecordModal] = useState(false);
 
-  const { data: payments = [], isLoading, refetch } = useQuery({
+  const { data, isLoading, refetch } = useQuery({
     queryKey: ['payments', search, typeFilter],
     queryFn: () => fetchPayments({ search, type: typeFilter }),
   });
 
-  // Calculate totals
-  const totalAmount = payments.reduce((sum: number, p: Payment) => sum + p.amount, 0);
+  const payments = data?.payments || [];
+  const totalAmount = data?.totalAmount || 0;
 
   return (
     <div className="space-y-4">
