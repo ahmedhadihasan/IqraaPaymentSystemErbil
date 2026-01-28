@@ -3,7 +3,7 @@
 
 export const ku = {
   // App
-  appName: "ئیقرائ",
+  appName: "اقرأ - لقی هەولێر",
   appTitle: "سیستەمی بەڕێوەبردنی بەشداریکردن",
   
   // Navigation
@@ -45,7 +45,7 @@ export const ku = {
     loginButton: "چوونەژوورەوە",
     loggingIn: "چوونەژوورەوە...",
     loginError: "ئیمەیڵ یان وشەی نهێنی هەڵەیە",
-    welcome: "بەخێربێیت بۆ ئیقرائ",
+    welcome: "بەخێربێیت بۆ اقرأ - لقی هەولێر",
     subtitle: "سیستەمی بەڕێوەبردنی بەشداریکردنی قوتابیان",
   },
 
