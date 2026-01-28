@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useSession } from 'next-auth/react';
 import { 
   Search, 
   Plus, 
@@ -11,13 +12,14 @@ import {
   User,
   Users,
   Gift,
-  GraduationCap,
   X,
-  UserCheck
+  UserCheck,
+  BookOpen
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { ku, formatIQD } from '@/lib/translations';
 import { RecordPaymentModal } from '@/components/payments/record-payment-modal';
+import { CLASS_TIMES } from '@/lib/billing';
 
 interface Payment {
   id: string;
@@ -34,10 +36,14 @@ interface Payment {
   createdAt: string;
 }
 
-async function fetchPayments(params: { search?: string; type?: string }) {
+async function fetchPayments(params: { search?: string; type?: string; period?: string; startDate?: string; endDate?: string; classTime?: string }) {
   const query = new URLSearchParams();
   if (params.search) query.set('search', params.search);
   if (params.type) query.set('type', params.type);
+  if (params.period) query.set('period', params.period);
+  if (params.startDate) query.set('startDate', params.startDate);
+  if (params.endDate) query.set('endDate', params.endDate);
+  if (params.classTime && params.classTime !== 'all') query.set('classTime', params.classTime);
   
   const res = await fetch(`/api/payments?${query.toString()}`);
   if (!res.ok) throw new Error('Failed to fetch payments');
@@ -50,27 +56,48 @@ async function fetchPayments(params: { search?: string; type?: string }) {
 
 const paymentTypeIcons: Record<string, typeof User> = {
   single: User,
-  sibling_group: Users,
+  family: Users,
   donation: Gift,
-  scholarship: GraduationCap,
+  book: BookOpen,
 };
 
 const paymentTypeColors: Record<string, string> = {
   single: 'bg-blue-100 text-blue-600',
-  sibling_group: 'bg-purple-100 text-purple-600',
+  family: 'bg-purple-100 text-purple-600',
   donation: 'bg-amber-100 text-amber-600',
-  scholarship: 'bg-green-100 text-green-600',
+  book: 'bg-indigo-100 text-indigo-600',
 };
 
+import { useSearchParams } from 'next/navigation';
+
 export default function PaymentsPage() {
+  const searchParams = useSearchParams();
+  const { data: session } = useSession();
+  const isSuperAdmin = session?.user?.role === 'super_admin';
+  
+  const initialPeriod = searchParams.get('period') || '';
+  const initialStartDate = searchParams.get('startDate') || '';
+  const initialEndDate = searchParams.get('endDate') || '';
+
   const [search, setSearch] = useState('');
-  const [typeFilter, setTypeFilter] = useState<string>('');
+  const [typeFilters, setTypeFilters] = useState<string[]>([]);
+  const [classFilters, setClassFilters] = useState<string[]>([]);
+  const [period, setPeriod] = useState(initialPeriod);
+  const [startDate, setStartDate] = useState(initialStartDate);
+  const [endDate, setEndDate] = useState(initialEndDate);
   const [showFilters, setShowFilters] = useState(false);
   const [showRecordModal, setShowRecordModal] = useState(false);
 
   const { data, isLoading, refetch } = useQuery({
-    queryKey: ['payments', search, typeFilter],
-    queryFn: () => fetchPayments({ search, type: typeFilter }),
+    queryKey: ['payments', search, typeFilters.join(','), classFilters.join(','), period, startDate, endDate],
+    queryFn: () => fetchPayments({ 
+      search, 
+      type: typeFilters.length > 0 ? typeFilters.join(',') : undefined, 
+      classTime: classFilters.length > 0 ? classFilters.join(',') : undefined, 
+      period, 
+      startDate, 
+      endDate 
+    }),
   });
 
   const payments = data?.payments || [];
@@ -106,10 +133,11 @@ export default function PaymentsPage() {
             className="mobile-input pr-10"
           />
         </div>
+        
         <button
           onClick={() => setShowFilters(!showFilters)}
           className={`w-12 h-12 flex items-center justify-center rounded-xl border-2 transition-colors ${
-            showFilters || typeFilter ? 'bg-primary text-white border-primary' : 'border-gray-200 text-gray-600'
+            showFilters || typeFilters.length > 0 || classFilters.length > 0 ? 'bg-primary text-white border-primary' : 'border-gray-200 text-gray-600'
           }`}
         >
           <Filter className="w-5 h-5" />
@@ -119,36 +147,70 @@ export default function PaymentsPage() {
       {/* Filters */}
       {showFilters && (
         <div className="mobile-card animate-fade-in">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between mb-4">
             <span className="font-medium text-gray-900">{ku.payments.type}</span>
-            {typeFilter && (
+            {(typeFilters.length > 0 || classFilters.length > 0) && (
               <button
-                onClick={() => setTypeFilter('')}
+                onClick={() => {
+                  setTypeFilters([]);
+                  setClassFilters([]);
+                }}
                 className="text-sm text-primary"
               >
                 {ku.common.clear}
               </button>
             )}
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            {Object.entries(ku.payments.paymentTypes).map(([key, label]) => (
-              <button
-                key={key}
-                onClick={() => setTypeFilter(typeFilter === key ? '' : key)}
-                className={`py-3 px-4 rounded-xl text-sm font-medium transition-colors flex items-center gap-2 ${
-                  typeFilter === key
-                    ? 'bg-primary text-white'
-                    : 'bg-gray-100 text-gray-700'
-                }`}
-              >
-                {(() => {
-                  const Icon = paymentTypeIcons[key] || CreditCard;
-                  return <Icon className="w-4 h-4" />;
-                })()}
-                {label}
-              </button>
-            ))}
+
+          <div className="grid grid-cols-2 gap-2 mb-4">
+            {[
+              { key: 'single', label: ku.payments.paymentTypes.single, icon: User },
+              { key: 'family', label: ku.payments.paymentTypes.family, icon: Users },
+              { key: 'donation', label: ku.payments.paymentTypes.donation, icon: Gift },
+              { key: 'book', label: ku.payments.paymentTypes.book, icon: BookOpen },
+            ].map(({ key, label, icon: Icon }) => {
+              const checked = typeFilters.includes(key);
+              return (
+                <label key={key} className={`py-3 px-4 rounded-xl text-sm font-medium transition-colors flex items-center gap-2 cursor-pointer ${
+                  checked ? 'bg-primary text-white' : 'bg-gray-100 text-gray-700'
+                }`}>
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => {
+                      setTypeFilters(prev => prev.includes(key) ? prev.filter(v => v !== key) : [...prev, key]);
+                    }}
+                    className="hidden"
+                  />
+                  <Icon className="w-4 h-4" />
+                  {label}
+                </label>
+              );
+            })}
           </div>
+
+          {isSuperAdmin && (
+            <div className="grid grid-cols-2 gap-2">
+              {CLASS_TIMES.map((time) => {
+                const checked = classFilters.includes(time);
+                return (
+                  <label key={time} className={`py-2.5 px-3 rounded-xl text-xs font-medium transition-colors cursor-pointer ${
+                    checked ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-700'
+                  }`}>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => {
+                        setClassFilters(prev => prev.includes(time) ? prev.filter(v => v !== time) : [...prev, time]);
+                      }}
+                      className="hidden"
+                    />
+                    {ku.classTimes[time] || time}
+                  </label>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 

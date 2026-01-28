@@ -55,7 +55,7 @@ export default function LoginPage() {
         <div className="mx-auto mb-4 w-24 h-24 rounded-2xl overflow-hidden bg-white shadow-xl">
           <img 
             src="/logo.jpg" 
-            alt="ئیقرائ" 
+            alt="رێکخراوی اقرا - لقی هەولێر" 
             className="h-full w-full object-cover" 
           />
         </div>

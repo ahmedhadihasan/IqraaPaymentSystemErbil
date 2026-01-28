@@ -70,10 +70,11 @@ export async function PUT(
     if (session.user.role !== 'super_admin') {
       const admin = await prisma.admin.findUnique({
         where: { id: session.user.id },
-        select: { assignedClassTimes: true },
-      });
+        select: { assignedClassTimes: true, assignedGender: true },
+      } as any);
       
       const adminClassTimes = admin?.assignedClassTimes?.split(',').filter(Boolean) || [];
+      const adminGender = (admin as any)?.assignedGender || '';
       
       // Admin can only update students in their assigned class times
       if (adminClassTimes.length > 0 && existingStudent.classTime) {
@@ -83,6 +84,12 @@ export async function PUT(
             { status: 403 }
           );
         }
+      }
+      if (adminGender && existingStudent.gender !== adminGender) {
+        return NextResponse.json(
+          { error: 'You can only update students in your assigned gender' },
+          { status: 403 }
+        );
       }
     }
 
@@ -102,6 +109,7 @@ export async function PUT(
         classGroup: body.classGroup || null,
         notes: body.notes || null,
         status: body.status || 'active',
+        isForgiven: body.isForgiven !== undefined ? body.isForgiven : undefined,
       },
     });
 

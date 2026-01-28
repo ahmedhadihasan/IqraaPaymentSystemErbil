@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { normalizeText } from '@/lib/text-utils';
+import { parse } from 'csv-parse/sync';
 
 /**
  * Map Kurdish class time names to system codes
@@ -12,13 +13,17 @@ const CLASS_TIME_MAP: Record<string, string> = {
   'شەممە عەسر': 'saturday_evening',
   'شەممە ئێوارە': 'saturday_evening',
   'شەممە شەو': 'saturday_night',
+  'شەممە شەوان': 'saturday_night',
   'دووشەممە عەسر': 'monday_evening',
   'دووشەممە ئێوارە': 'monday_evening',
   'سێشەممە شەو': 'tuesday_night',
+  'سێشەممە شەوان': 'tuesday_night',
   'چوارشەممە عەسر': 'wednesday_evening',
   'چوارشەممە ئێوارە': 'wednesday_evening',
   'چوارشەممە شەو': 'wednesday_night',
+  'چوارشەممە شەوان': 'wednesday_night',
   'پێنجشەممە شەو': 'thursday_night',
+  'پێنجشەممە شەوان': 'thursday_night',
 };
 
 /**
@@ -53,22 +58,22 @@ export async function POST(request: NextRequest) {
 
     // Read file content
     const text = await file.text();
-    const lines = text.split('\n').filter(line => line.trim());
-
-    // Skip header row
-    const dataLines = lines.slice(1);
+    
+    // Parse CSV
+    const records = parse(text, {
+      columns: false,
+      skip_empty_lines: true,
+      from_line: 2 // Skip header
+    });
 
     const imported: string[] = [];
     const errors: string[] = [];
 
-    for (let i = 0; i < dataLines.length; i++) {
-      const line = dataLines[i];
+    for (let i = 0; i < records.length; i++) {
+      const values = records[i];
       const lineNum = i + 2; // +2 because we skipped header and 0-indexed
 
       try {
-        // Parse CSV line (handle commas in quoted values)
-        const values = parseCSVLine(line);
-
         // Extract values (skip first column which is the number)
         const name = values[1]?.trim();
         const birthYear = values[2]?.trim() || null;
@@ -119,31 +124,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-}
-
-/**
- * Parse a CSV line handling quoted values
- */
-function parseCSVLine(line: string): string[] {
-  const values: string[] = [];
-  let current = '';
-  let inQuotes = false;
-
-  for (let i = 0; i < line.length; i++) {
-    const char = line[i];
-    
-    if (char === '"') {
-      inQuotes = !inQuotes;
-    } else if (char === ',' && !inQuotes) {
-      values.push(current);
-      current = '';
-    } else {
-      current += char;
-    }
-  }
-  
-  // Add last value
-  values.push(current);
-
-  return values;
 }

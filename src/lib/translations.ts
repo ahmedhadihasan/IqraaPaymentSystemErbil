@@ -16,6 +16,8 @@ export const ku = {
     admins: "بەڕێوەبەران",
     settings: "ڕێکخستنەکان",
     reports: "ڕاپۆرتەکان",
+    books: "کتێبەکان",
+    manageBooks: "بەڕێوەبردنی کتێب",
     logout: "دەرچوون",
   },
 
@@ -150,11 +152,9 @@ export const ku = {
     amountPlaceholder: "بۆ نمونە: ٢٥٠٠٠",
     paymentTypes: {
       single: "پارەدانی تاک",
-      sibling: "خوشک و برا (٦ مانگ)",
-      sibling_group: "پارەدانی خوشک و برا",
-      monthly: "پارەدانی مانگانە",
+      family: "پارەدانی خوشک و برا",
       donation: "بەخشین",
-      scholarship: "بورسیە",
+      book: "فرۆشتنی کتێب",
     },
     today: "ئەمڕۆ",
     thisWeek: "ئەم هەفتەیە",

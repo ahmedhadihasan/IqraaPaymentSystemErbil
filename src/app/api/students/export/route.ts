@@ -3,6 +3,9 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { ku } from '@/lib/translations';
+import { SEMESTER } from '@/lib/billing';
+
+export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/students/export - Export students as CSV
@@ -21,12 +24,14 @@ export async function GET(request: NextRequest) {
 
     // Get admin's class times if needed
     let adminClassTimes: string[] = [];
+    let adminGender = '';
     if (myStudentsOnly && session.user.role !== 'super_admin') {
       const admin = await prisma.admin.findUnique({
         where: { id: session.user.id },
-        select: { assignedClassTimes: true },
-      });
+        select: { assignedClassTimes: true, assignedGender: true },
+      } as any);
       adminClassTimes = admin?.assignedClassTimes?.split(',') || [];
+      adminGender = (admin as any)?.assignedGender || '';
     }
 
     // Build filter
@@ -37,6 +42,9 @@ export async function GET(request: NextRequest) {
       if (classTime) where.classTime = classTime;
       if (myStudentsOnly && adminClassTimes.length > 0) {
         where.classTime = { in: adminClassTimes };
+      }
+      if (myStudentsOnly && adminGender) {
+        where.gender = adminGender;
       }
     }
 
@@ -87,7 +95,7 @@ export async function GET(request: NextRequest) {
 
     const rows = students.map(student => {
       const latestPayment = student.payments[0];
-      const isPaid = latestPayment && new Date(latestPayment.periodEnd) >= new Date('2026-01-01');
+      const isPaid = latestPayment && new Date(latestPayment.periodEnd) >= SEMESTER.START;
       
       return [
         student.name,

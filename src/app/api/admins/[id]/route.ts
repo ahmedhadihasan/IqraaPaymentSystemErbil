@@ -4,6 +4,8 @@ import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { hash } from 'bcryptjs';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/admins/[id] - Get single admin
  */
@@ -19,23 +21,20 @@ export async function GET(
 
     const admin = await prisma.admin.findUnique({
       where: { id: params.id },
-      select: {
-        id: true,
-        email: true,
-        fullName: true,
-        role: true,
-        isActive: true,
-        assignedClassTimes: true,
-        lastLogin: true,
-        createdAt: true,
-      },
     });
 
     if (!admin) {
       return NextResponse.json({ error: 'Admin not found' }, { status: 404 });
     }
 
-    return NextResponse.json(admin);
+    const adminResponse = {
+      ...admin,
+      fullName: (admin as any).fullName || (admin as any).full_name || 'بێ ناو',
+      assignedClassTimes: (admin as any).assignedClassTimes || (admin as any).assigned_class_times || '',
+      assignedGender: (admin as any).assignedGender || (admin as any).assigned_gender || null,
+    };
+
+    return NextResponse.json(adminResponse);
   } catch (error) {
     console.error('Error fetching admin:', error);
     return NextResponse.json(
@@ -69,6 +68,19 @@ export async function PUT(
       return NextResponse.json({ error: 'Admin not found' }, { status: 404 });
     }
 
+    if (body.email && body.email !== existingAdmin.email) {
+      const emailOwner = await prisma.admin.findUnique({
+        where: { email: body.email },
+        select: { id: true },
+      });
+      if (emailOwner) {
+        return NextResponse.json(
+          { error: 'Email already exists' },
+          { status: 400 }
+        );
+      }
+    }
+
     // Can't change own role
     if (params.id === session.user.id && body.role && body.role !== existingAdmin.role) {
       return NextResponse.json(
@@ -85,6 +97,7 @@ export async function PUT(
     if (body.role !== undefined) updateData.role = body.role;
     if (body.isActive !== undefined) updateData.isActive = body.isActive;
     if (body.assignedClassTimes !== undefined) updateData.assignedClassTimes = body.assignedClassTimes;
+    if (body.assignedGender !== undefined) updateData.assignedGender = body.assignedGender;
     
     // Hash new password if provided
     if (body.password) {
@@ -93,20 +106,17 @@ export async function PUT(
 
     const admin = await prisma.admin.update({
       where: { id: params.id },
-      data: updateData,
-      select: {
-        id: true,
-        email: true,
-        fullName: true,
-        role: true,
-        isActive: true,
-        assignedClassTimes: true,
-        lastLogin: true,
-        createdAt: true,
-      },
+      data: updateData as any,
     });
 
-    return NextResponse.json(admin);
+    const adminResponse = {
+      ...admin,
+      fullName: (admin as any).fullName || (admin as any).full_name || 'بێ ناو',
+      assignedClassTimes: (admin as any).assignedClassTimes || (admin as any).assigned_class_times || '',
+      assignedGender: (admin as any).assignedGender || (admin as any).assigned_gender || null,
+    };
+
+    return NextResponse.json(adminResponse);
   } catch (error) {
     console.error('Error updating admin:', error);
     return NextResponse.json(

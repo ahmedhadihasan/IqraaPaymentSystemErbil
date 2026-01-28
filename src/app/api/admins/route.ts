@@ -3,6 +3,18 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { hash } from 'bcryptjs';
+import { z } from 'zod';
+
+export const dynamic = 'force-dynamic';
+
+const createAdminSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(6),
+  fullName: z.string().min(2),
+  role: z.enum(['admin', 'super_admin']).optional(),
+  assignedClassTimes: z.string().optional(),
+  assignedGender: z.enum(['male', 'female']).optional(),
+});
 
 /**
  * GET /api/admins - List all admins (super admin only)
@@ -15,16 +27,6 @@ export async function GET(request: NextRequest) {
     }
 
     const admins = await prisma.admin.findMany({
-      select: {
-        id: true,
-        email: true,
-        fullName: true,
-        role: true,
-        isActive: true,
-        assignedClassTimes: true,
-        lastLogin: true,
-        createdAt: true,
-      },
       orderBy: { createdAt: 'asc' },
     });
 
@@ -43,10 +45,20 @@ export async function GET(request: NextRequest) {
       _sum: { amount: true },
     });
 
-    const adminsWithCollection = admins.map(admin => ({
-      ...admin,
-      todayCollection: adminPayments.find(ap => ap.recordedBy === admin.id)?._sum.amount || 0,
-    }));
+    const adminsWithCollection = admins.map((admin: any) => {
+      // Robust field mapping for Prisma potential inconsistencies
+      const fullName = admin.fullName || admin.full_name || 'بێ ناو';
+      const assignedClassTimes = admin.assignedClassTimes || admin.assigned_class_times || '';
+      const assignedGender = admin.assignedGender || admin.assigned_gender || null;
+      
+      return {
+        ...admin,
+        fullName,
+        assignedClassTimes,
+        assignedGender,
+        todayCollection: adminPayments.find(ap => ap.recordedBy === admin.id)?._sum.amount || 0,
+      };
+    });
 
     return NextResponse.json(adminsWithCollection);
   } catch (error) {
@@ -70,16 +82,19 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
 
-    if (!body.email || !body.password || !body.fullName) {
+    const validationResult = createAdminSchema.safeParse(body);
+    if (!validationResult.success) {
       return NextResponse.json(
-        { error: 'Email, password, and full name are required' },
+        { error: 'Invalid input', details: validationResult.error.errors },
         { status: 400 }
       );
     }
+    
+    const data = validationResult.data;
 
     // Check if email already exists
     const existing = await prisma.admin.findUnique({
-      where: { email: body.email },
+      where: { email: data.email },
     });
 
     if (existing) {
@@ -90,30 +105,27 @@ export async function POST(request: NextRequest) {
     }
 
     // Hash password
-    const passwordHash = await hash(body.password, 12);
+    const passwordHash = await hash(data.password, 12);
 
     // Create admin
     const admin = await prisma.admin.create({
       data: {
-        email: body.email,
+        email: data.email,
         passwordHash,
-        fullName: body.fullName,
-        role: body.role || 'admin',
-        assignedClassTimes: body.assignedClassTimes || null,
+        fullName: data.fullName,
+        role: data.role || 'admin',
+        assignedClassTimes: data.assignedClassTimes || '',
+        assignedGender: data.assignedGender || null,
         createdBy: session.user.id,
-      },
-      select: {
-        id: true,
-        email: true,
-        fullName: true,
-        role: true,
-        isActive: true,
-        assignedClassTimes: true,
-        createdAt: true,
-      },
+      } as any,
     });
 
-    return NextResponse.json(admin, { status: 201 });
+    const adminResponse = {
+      ...admin,
+      fullName: (admin as any).fullName || (admin as any).full_name,
+    };
+
+    return NextResponse.json(adminResponse, { status: 201 });
   } catch (error) {
     console.error('Error creating admin:', error);
     return NextResponse.json(

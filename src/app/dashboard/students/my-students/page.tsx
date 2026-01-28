@@ -22,7 +22,8 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { ku } from '@/lib/translations';
+import { ku, formatIQD } from '@/lib/translations';
+import { SEMESTER } from '@/lib/billing';
 import { useToast } from '@/hooks/use-toast';
 import { AddStudentModal } from '@/components/students/add-student-modal';
 import { RecordPaymentModal } from '@/components/payments/record-payment-modal';
@@ -38,6 +39,7 @@ interface Student {
   status: string;
   classTime: string | null;
   hasPaid?: boolean;
+  isForgiven: boolean;
 }
 
 async function fetchMyStudents(params: { search?: string; gender?: string }) {
@@ -49,6 +51,19 @@ async function fetchMyStudents(params: { search?: string; gender?: string }) {
   const res = await fetch(`/api/students?${query.toString()}`);
   if (!res.ok) throw new Error('Failed to fetch students');
   return res.json();
+}
+
+async function fetchSemesterPayments() {
+  const query = new URLSearchParams();
+  query.set('period', 'custom');
+  query.set('startDate', SEMESTER.START.toISOString());
+  query.set('endDate', SEMESTER.END.toISOString());
+  query.set('type', 'single,family');
+
+  const res = await fetch(`/api/payments?${query.toString()}`);
+  if (!res.ok) throw new Error('Failed to fetch payments');
+  const data = await res.json();
+  return data.totalAmount || 0;
 }
 
 export default function MyStudentsPage() {
@@ -70,6 +85,11 @@ export default function MyStudentsPage() {
     queryFn: () => fetchMyStudents({ search, gender: genderFilter }),
   });
 
+  const { data: semesterAmount = 0 } = useQuery({
+    queryKey: ['semester-payments', 'my-students', session?.user?.role],
+    queryFn: fetchSemesterPayments,
+  });
+
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
       const res = await fetch(`/api/students/${id}`, { method: 'DELETE' });
@@ -79,6 +99,25 @@ export default function MyStudentsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['my-students'] });
       toast({ title: ku.students.studentDeleted });
+    },
+    onError: () => {
+      toast({ title: ku.errors.generic, variant: 'destructive' });
+    },
+  });
+
+  const toggleForgivenMutation = useMutation({
+    mutationFn: async ({ id, isForgiven }: { id: string; isForgiven: boolean }) => {
+      const res = await fetch(`/api/students/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isForgiven }),
+      });
+      if (!res.ok) throw new Error('Failed to update student');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['my-students'] });
+      toast({ title: 'باری خوێندکار نوێکرایەوە' });
     },
     onError: () => {
       toast({ title: ku.errors.generic, variant: 'destructive' });
@@ -100,12 +139,23 @@ export default function MyStudentsPage() {
     setShowPaymentModal(true);
   };
 
+  const handleToggleForgiven = (student: Student) => {
+    toggleForgivenMutation.mutate({ 
+      id: student.id, 
+      isForgiven: !student.isForgiven 
+    });
+  };
+
   // Filter students by paid status
-  const filteredStudents = students.filter((student: Student) => {
+  const filteredStudents = (students as Student[]).filter((student: Student) => {
     if (paidFilter === 'paid') return student.hasPaid;
     if (paidFilter === 'unpaid') return !student.hasPaid;
     return true;
   });
+
+  const paidCount = filteredStudents.filter((student: Student) => student.hasPaid).length;
+  const unpaidCount = filteredStudents.length - paidCount;
+  const forgivenCount = filteredStudents.filter((student: Student) => student.isForgiven).length;
 
   // Check if admin has assigned class times
   const hasNoAssignedClasses = session?.user?.role !== 'super_admin' && students.length === 0 && !search && !genderFilter;
@@ -234,16 +284,35 @@ export default function MyStudentsPage() {
         </div>
       )}
 
-      {/* Stats Bar */}
-      <div className="flex items-center justify-between px-1">
-        <span className="text-sm text-gray-500">
-          {ku.students.total}: <strong>{filteredStudents.length}</strong>
-          {paidFilter !== 'all' && (
-            <span className="mr-2">
-              ({paidFilter === 'paid' ? 'دراوە' : 'نەدراوە'})
-            </span>
-          )}
-        </span>
+      <div className="grid grid-cols-2 gap-2">
+        <div className="mobile-card">
+          <p className="text-xs text-gray-500">دراوە</p>
+          <p className="text-lg font-bold text-green-600">{paidCount}</p>
+        </div>
+        <div className="mobile-card">
+          <p className="text-xs text-gray-500">نەدراوە</p>
+          <p className="text-lg font-bold text-red-600">{unpaidCount}</p>
+        </div>
+        <div className="mobile-card">
+          <p className="text-xs text-gray-500">کۆی پارەی وەرز</p>
+          <p className="text-lg font-bold text-primary">{formatIQD(semesterAmount)}</p>
+        </div>
+        {session?.user?.role === 'super_admin' && (
+          <div className="mobile-card">
+            <p className="text-xs text-gray-500">لێخۆشبوو</p>
+            <p className="text-lg font-bold text-amber-600">{forgivenCount}</p>
+          </div>
+        )}
+        <div className="flex items-center justify-between px-1 col-span-2">
+          <span className="text-sm text-gray-500">
+            {ku.students.total}: <strong>{filteredStudents.length}</strong>
+            {paidFilter !== 'all' && (
+              <span className="mr-2">
+                ({paidFilter === 'paid' ? 'دراوە' : 'نەدراوە'})
+              </span>
+            )}
+          </span>
+        </div>
       </div>
 
       {/* Students List */}
@@ -276,6 +345,8 @@ export default function MyStudentsPage() {
               onEdit={() => setSelectedStudent(student)}
               onDelete={() => handleDelete(student)}
               onPayment={() => handlePayment(student)}
+              onToggleForgiven={() => handleToggleForgiven(student)}
+              isUpdating={toggleForgivenMutation.isPending}
             />
           ))
         )}
@@ -320,12 +391,16 @@ function StudentCard({
   student, 
   onEdit, 
   onDelete,
-  onPayment
+  onPayment,
+  onToggleForgiven,
+  isUpdating
 }: { 
   student: Student;
   onEdit: () => void;
   onDelete: () => void;
   onPayment: () => void;
+  onToggleForgiven: () => void;
+  isUpdating?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -361,6 +436,9 @@ function StudentCard({
             </span>
             {student.hasPaid && (
               <span className="text-xs text-green-600 font-medium">دراوە ✓</span>
+            )}
+            {student.isForgiven && (
+              <span className="text-xs text-amber-600 font-medium bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">لێخۆشبوو</span>
             )}
             {student.birthYear && (
               <span className="text-xs text-gray-500">{student.birthYear}</span>
@@ -407,11 +485,11 @@ function StudentCard({
           )}
 
           {/* Actions */}
-          <div className="flex gap-2 pt-2">
+          <div className="grid grid-cols-2 gap-2 pt-2">
             {!student.hasPaid && (
               <button
                 onClick={(e) => { e.stopPropagation(); onPayment(); }}
-                className="flex-1 py-2 px-4 rounded-lg bg-green-100 text-green-700 font-medium text-sm flex items-center justify-center gap-2"
+                className="py-2 px-4 rounded-lg bg-green-100 text-green-700 font-medium text-sm flex items-center justify-center gap-2"
               >
                 <CreditCard className="w-4 h-4" />
                 پارەدان
@@ -419,10 +497,22 @@ function StudentCard({
             )}
             <button
               onClick={(e) => { e.stopPropagation(); onEdit(); }}
-              className="flex-1 py-2 px-4 rounded-lg bg-gray-100 text-gray-700 font-medium text-sm flex items-center justify-center gap-2"
+              className="py-2 px-4 rounded-lg bg-gray-100 text-gray-700 font-medium text-sm flex items-center justify-center gap-2"
             >
               <Edit className="w-4 h-4" />
               {ku.common.edit}
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); onToggleForgiven(); }}
+              disabled={isUpdating}
+              className={`py-2 px-4 rounded-lg font-medium text-sm flex items-center justify-center gap-2 transition-colors ${
+                student.isForgiven 
+                  ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' 
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              <Check className="w-4 h-4" />
+              {student.isForgiven ? 'لادانی لێخۆشبوون' : 'لێخۆشبوون'}
             </button>
             <button
               onClick={(e) => { e.stopPropagation(); onDelete(); }}

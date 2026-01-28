@@ -3,6 +3,8 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
@@ -12,125 +14,137 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
-    const period = searchParams.get('period') || 'today'; // today, week, month, all
+    const period = searchParams.get('period') || 'today';
+    const startParam = searchParams.get('startDate');
+    const endParam = searchParams.get('endDate');
 
-    // Get admin's class times if not super admin
-    let adminClassTimes: string[] = [];
     const isSuperAdmin = session.user.role === 'super_admin';
+    let adminClassTimes: string[] = [];
+    let adminGender = '';
     
     if (!isSuperAdmin) {
       const admin = await prisma.admin.findUnique({
         where: { id: session.user.id },
-        select: { assignedClassTimes: true },
-      });
+        select: { assignedClassTimes: true, assignedGender: true },
+      } as any);
       adminClassTimes = admin?.assignedClassTimes?.split(',') || [];
+      adminGender = (admin as any)?.assignedGender || '';
     }
 
-    // Build student filter
-    const studentWhere: Record<string, unknown> = { status: 'active' };
+    const now = new Date();
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+    const todayEnd = new Date(todayStart);
+    todayEnd.setDate(todayEnd.getDate() + 1);
+
+    // Build period filter
+    let dateFilter: Record<string, Date> = {};
+    if (period === 'custom' && startParam && endParam) {
+      dateFilter = { 
+        gte: new Date(startParam), 
+        lte: new Date(new Date(endParam).setHours(23, 59, 59, 999)) 
+      };
+    } else {
+      switch (period) {
+        case 'today':
+          dateFilter = { gte: todayStart, lt: todayEnd };
+          break;
+        case 'week': {
+          // Saturday to Friday
+          const day = now.getDay();
+          const diffToSat = (day + 1) % 7; 
+          const sat = new Date(todayStart);
+          sat.setDate(todayStart.getDate() - diffToSat);
+          const fri = new Date(sat);
+          fri.setDate(sat.getDate() + 6);
+          fri.setHours(23, 59, 59, 999);
+          dateFilter = { gte: sat, lte: fri };
+          break;
+        }
+        case 'month': {
+          const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+          const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+          lastDay.setHours(23, 59, 59, 999);
+          dateFilter = { gte: firstDay, lte: lastDay };
+          break;
+        }
+        case 'all':
+        default:
+          break;
+      }
+    }
+
+    // Student counts
+    const studentWhere: Record<string, any> = { status: 'active' };
     if (!isSuperAdmin && adminClassTimes.length > 0) {
       studentWhere.classTime = { in: adminClassTimes };
     }
+    if (!isSuperAdmin && adminGender) {
+      studentWhere.gender = adminGender;
+    }
 
-    // Get student counts (filtered by admin's classes if not super admin)
     const [totalStudents, maleStudents, femaleStudents] = await Promise.all([
       prisma.student.count({ where: studentWhere }),
       prisma.student.count({ where: { ...studentWhere, gender: 'male' } }),
       prisma.student.count({ where: { ...studentWhere, gender: 'female' } }),
     ]);
 
-    // Date calculations - Using Iraq Time (GMT+3)
-    // We create a date that represents "now" in current region
-    const now = new Date();
-    // Move to Iraq time offset (simplified)
-    const iraqOffset = 3; 
-    const iraqNow = new Date(now.getTime() + (iraqOffset * 60 * 60 * 1000));
-    
-    // Get the start of today in Iraq time
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    // Explicitly set to midnight to avoid any trailing hours
-    todayStart.setHours(0, 0, 0, 0);
-    
-    const todayEnd = new Date(todayStart);
-    todayEnd.setDate(todayEnd.getDate() + 1);
-
-    const weekStart = new Date(todayStart);
-    weekStart.setDate(weekStart.getDate() - 7);
-
-    const monthStart = new Date(todayStart);
-    monthStart.setDate(monthStart.getDate() - 30);
-
-    // Build payment date filter based on period
-    let dateFilter: Record<string, Date> = {};
-    switch (period) {
-      case 'today':
-        dateFilter = { gte: todayStart, lt: todayEnd };
-        break;
-      case 'week':
-        dateFilter = { gte: weekStart, lt: todayEnd };
-        break;
-      case 'month':
-        dateFilter = { gte: monthStart, lt: todayEnd };
-        break;
-      case 'all':
-      default:
-        // No date filter
-        break;
-    }
-
-    // Get today's payments for current admin
-    let todayPayments = [] as any[];
-
-    if (isSuperAdmin) {
-      // Super admin: all root payments for today
-      const todayPaymentsWhere: Record<string, any> = {
-        paymentDate: { gte: todayStart, lt: todayEnd },
+    // Revenue Split (Student vs Books)
+    const collections = await prisma.payment.findMany({
+      where: {
+        paymentDate: dateFilter,
         voided: false,
-        siblingPaymentId: null, // only root payments
-      };
+      },
+      select: { amount: true, paymentType: true },
+    });
 
-      todayPayments = await prisma.payment.findMany({
-        where: todayPaymentsWhere,
-        include: { student: true },
-        orderBy: { createdAt: 'desc' },
-      });
-    } else {
-      // Normal admin: include root payments where primary student is in admin classes,
-      // or any sibling (child payment) student is in admin classes, or payments recorded by admin
-      const rootPayments = await prisma.payment.findMany({
-        where: {
-          paymentDate: { gte: todayStart, lt: todayEnd },
-          voided: false,
-          siblingPaymentId: null,
-        },
-        include: { student: true },
-        orderBy: { createdAt: 'desc' },
-      });
+    const studentCollection = collections
+      .filter(p => p.paymentType !== 'book')
+      .reduce((sum, p) => sum + p.amount, 0);
+    const bookCollection = collections
+      .filter(p => p.paymentType === 'book')
+      .reduce((sum, p) => sum + p.amount, 0);
 
-      // Fetch child payments in the same date range to detect family payments with siblings in admin classes
-      const childPayments = await prisma.payment.findMany({
-        where: {
-          paymentDate: { gte: todayStart, lt: todayEnd },
-          voided: false,
-          siblingPaymentId: { not: null },
-        },
-        include: { student: true },
-      });
+    const todayPaymentsWhere: Record<string, any> = {
+      paymentDate: { gte: todayStart, lt: todayEnd },
+      voided: false,
+    };
 
-      todayPayments = rootPayments.filter((p) => {
-        // recorded by admin
+    let todayPaymentsAll = await prisma.payment.findMany({
+      where: todayPaymentsWhere,
+      include: { student: true },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (!isSuperAdmin) {
+      todayPaymentsAll = todayPaymentsAll.filter(p => {
         if (p.recordedBy === session.user.id) return true;
-        // primary student class in admin classes
-        if (adminClassTimes.length > 0 && p.student?.classTime && adminClassTimes.includes(p.student.classTime)) return true;
-        // any child payment having a student in admin classes
-        const childMatch = childPayments.find((cp) => cp.siblingPaymentId === p.id && cp.student?.classTime && adminClassTimes.includes(cp.student.classTime));
-        return Boolean(childMatch);
+        if (
+          p.student?.classTime && 
+          adminClassTimes.includes(p.student.classTime) &&
+          (!adminGender || (p.student?.gender && p.student.gender === adminGender))
+        ) return true;
+        return false;
       });
     }
 
-    const todayAmount = todayPayments.reduce((sum, p) => sum + p.amount, 0);
+    const todayAmountTotal = todayPaymentsAll.reduce((sum, p) => sum + p.amount, 0);
+    const todayPaymentsCount = todayPaymentsAll.length;
+    const todayTransactions = todayPaymentsAll.filter(p => p.siblingPaymentId === null);
+    const todayRootIds = todayTransactions.map(p => p.id);
+    const todayChildren = todayRootIds.length > 0
+      ? await prisma.payment.findMany({
+          where: { siblingPaymentId: { in: todayRootIds }, voided: false },
+          select: { siblingPaymentId: true, amount: true },
+        })
+      : [];
+    const todayChildTotals = todayChildren.reduce((acc, child) => {
+      const key = child.siblingPaymentId as string;
+      acc.set(key, (acc.get(key) || 0) + child.amount);
+      return acc;
+    }, new Map<string, number>());
 
-    // Get unpaid students count (for admin's classes)
+    // Unpaid students
     const semesterStart = new Date('2026-01-01');
     const allStudents = await prisma.student.findMany({
       where: studentWhere,
@@ -149,59 +163,53 @@ export async function GET(request: NextRequest) {
       return new Date(latestPayment.periodEnd) < semesterStart;
     }).length;
 
-    // Get recent payments
-    let recentPayments = [] as any[];
+    // Recent Payments
+    let recentPayments = await prisma.payment.findMany({
+      where: { voided: false, siblingPaymentId: null },
+      include: { student: true },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
 
-    if (isSuperAdmin) {
-      const recentPaymentsWhere: Record<string, any> = { voided: false, siblingPaymentId: null };
-      recentPayments = await prisma.payment.findMany({
-        where: recentPaymentsWhere,
-        include: { student: true },
-        orderBy: { createdAt: 'desc' },
-        take: 5,
-      });
-    } else {
-      // For normal admin, fetch recent root payments and child payments in a reasonable window and filter
-      const rootRecent = await prisma.payment.findMany({
-        where: { voided: false, siblingPaymentId: null },
-        include: { student: true },
-        orderBy: { createdAt: 'desc' },
-        take: 50, // fetch more to filter down to 5 relevant
-      });
-
-      const rootIds = rootRecent.map(r => r.id);
-      const recentChild = await prisma.payment.findMany({
-        where: { siblingPaymentId: { in: rootIds }, voided: false },
-        include: { student: true },
-      });
-
-      const filtered = rootRecent.filter((p) => {
+    if (!isSuperAdmin) {
+      recentPayments = recentPayments.filter(p => {
         if (p.recordedBy === session.user.id) return true;
-        if (adminClassTimes.length > 0 && p.student?.classTime && adminClassTimes.includes(p.student.classTime)) return true;
-        const childMatch = recentChild.find(cp => cp.siblingPaymentId === p.id && cp.student?.classTime && adminClassTimes.includes(cp.student.classTime));
-        return Boolean(childMatch);
+        if (
+          p.student?.classTime && 
+          adminClassTimes.includes(p.student.classTime) &&
+          (!adminGender || (p.student?.gender && p.student.gender === adminGender))
+        ) return true;
+        return false;
       });
-
-      recentPayments = filtered.slice(0, 5);
     }
+    recentPayments = recentPayments.slice(0, 5);
+    const recentRootIds = recentPayments.map(p => p.id);
+    const recentChildren = recentRootIds.length > 0
+      ? await prisma.payment.findMany({
+          where: { siblingPaymentId: { in: recentRootIds }, voided: false },
+          select: { siblingPaymentId: true, amount: true },
+        })
+      : [];
+    const recentChildTotals = recentChildren.reduce((acc, child) => {
+      const key = child.siblingPaymentId as string;
+      acc.set(key, (acc.get(key) || 0) + child.amount);
+      return acc;
+    }, new Map<string, number>());
 
-    // For super admin: get collection by admin
-    let collectionByAdmin: Array<{ adminId: string; adminName: string; amount: number }> = [];
+    // Collection by Admin (Super Admin only)
+    let collectionByAdmin: any[] = [];
     if (isSuperAdmin) {
       const adminPayments = await prisma.payment.groupBy({
         by: ['recordedBy'],
         where: {
-          paymentDate: { gte: todayStart, lt: todayEnd },
+          paymentDate: dateFilter,
           voided: false,
-          siblingPaymentId: null,
         },
         _sum: { amount: true },
       });
 
-      // Get admin names
-      const adminIds = adminPayments.map(ap => ap.recordedBy);
       const admins = await prisma.admin.findMany({
-        where: { id: { in: adminIds } },
+        where: { id: { in: adminPayments.map(ap => ap.recordedBy) } },
         select: { id: true, fullName: true },
       });
 
@@ -212,96 +220,49 @@ export async function GET(request: NextRequest) {
       }));
     }
 
-    // Period collection for super admin
-    let periodCollection = 0;
-    if (isSuperAdmin && period !== 'today') {
-      const periodPayments = await prisma.payment.aggregate({
-        where: {
-          paymentDate: dateFilter,
-          voided: false,
-          siblingPaymentId: null, // Avoid double-counting siblings in totals
-        },
-        _sum: { amount: true },
-      });
-      periodCollection = periodPayments._sum.amount || 0;
-    }
-
-    // Get sibling/family payments statistics
+    // Sibling stats (Today)
     const siblingPayments = await prisma.payment.findMany({
       where: {
         paymentType: 'family',
         voided: false,
         paymentDate: { gte: todayStart, lt: todayEnd },
-        siblingPaymentId: null, // Only count root payment to avoid double counting siblings
       },
-      include: { student: true },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    const siblingPaymentsCount = siblingPayments.length;
-    const siblingPaymentsAmount = siblingPayments.reduce((sum, p) => sum + p.amount, 0);
-
-    // Today's all transactions for display
-    const todayAllTransactions = await prisma.payment.findMany({
-      where: {
-        paymentDate: { gte: todayStart, lt: todayEnd },
-        voided: false,
-        siblingPaymentId: null, // Only show root payments in general list
-      },
-      include: { student: true },
-      orderBy: { createdAt: 'desc' },
-      take: 20,
     });
 
     return NextResponse.json({
-      // Basic stats
       totalStudents,
       maleStudents,
       femaleStudents,
       unpaidStudents,
-      
-      // Today's collection (admin sees their own, super admin sees all)
-      todayPayments: todayPayments.length,
-      todayAmount,
-      
-      // Today's transactions list
-      todayTransactions: todayAllTransactions.map(p => ({
+      todayPayments: todayPaymentsCount,
+      todayAmount: todayAmountTotal,
+      todayTransactions: todayTransactions.map(p => ({
         id: p.id,
-        amount: p.amount,
+        amount: p.amount + (todayChildTotals.get(p.id) || 0),
         studentName: p.student.name,
         paymentDate: p.paymentDate.toISOString(),
         paymentType: p.paymentType,
         siblingNames: p.siblingNames,
         recordedByName: p.recordedByName,
       })),
-      
-      // Sibling payments stats
-      siblingPaymentsCount,
-      siblingPaymentsAmount,
-      
-      // Recent payments
+      siblingPaymentsCount: siblingPayments.length,
+      siblingPaymentsAmount: siblingPayments.reduce((sum, p) => sum + p.amount, 0),
       recentPayments: recentPayments.map(p => ({
         id: p.id,
-        amount: p.amount,
+        amount: p.amount + (recentChildTotals.get(p.id) || 0),
         studentName: p.student.name,
         paymentDate: p.paymentDate.toISOString(),
         paymentType: p.paymentType,
         recordedByName: p.recordedByName,
       })),
-      
-      // Super admin only
       collectionByAdmin: isSuperAdmin ? collectionByAdmin : undefined,
-      periodCollection: isSuperAdmin ? periodCollection : undefined,
-      
-      // Admin info
+      periodCollection: isSuperAdmin ? (studentCollection + bookCollection) : undefined,
+      studentCollection: isSuperAdmin ? studentCollection : undefined,
+      bookCollection: isSuperAdmin ? bookCollection : undefined,
       isSuperAdmin,
-      adminClassTimes,
     });
   } catch (error) {
     console.error('Dashboard stats error:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch dashboard stats' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to fetch dashboard stats' }, { status: 500 });
   }
 }

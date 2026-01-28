@@ -10,7 +10,8 @@ import {
   CreditCard, 
   Settings,
   LogOut,
-  Shield
+  Shield,
+  BookOpen
 } from 'lucide-react';
 import { ku } from '@/lib/translations';
 
@@ -25,6 +26,8 @@ export function DesktopSidebar() {
     { href: '/dashboard/students/my-students', icon: Users, label: ku.nav.myStudents },
     { href: '/dashboard/students', icon: UsersRound, label: ku.nav.allStudents, superAdminOnly: false },
     { href: '/dashboard/payments', icon: CreditCard, label: ku.nav.payments },
+    { href: '/dashboard/books', icon: BookOpen, label: ku.nav.books },
+    { href: '/dashboard/books/manage', icon: Shield, label: ku.nav.manageBooks, superAdminOnly: true },
     { href: '/dashboard/settings', icon: Settings, label: ku.nav.settings },
   ];
 
@@ -46,8 +49,18 @@ export function DesktopSidebar() {
       {/* Navigation */}
       <nav className="flex-1 p-4 space-y-2">
         {navItems.map((item) => {
-          const isActive = pathname === item.href || 
-            (item.href !== '/dashboard' && item.href !== '/dashboard/students/my-students' && pathname.startsWith(item.href) && !pathname.includes('/my-students'));
+          let isActive = pathname === item.href;
+          
+          if (item.href !== '/dashboard' && pathname.startsWith(item.href)) {
+             // Handle specific cases
+             if (item.href === '/dashboard/students' && pathname.includes('/my-students')) {
+               isActive = false;
+             } else if (item.href === '/dashboard/books' && pathname.includes('/manage')) {
+               isActive = false;
+             } else {
+               isActive = true;
+             }
+          }
           
           // Skip if super admin only and user is not super admin
           if (item.superAdminOnly && !isSuperAdmin) return null;
@@ -91,7 +104,10 @@ export function DesktopSidebar() {
           <p className="text-xs text-white/60 truncate">{session?.user?.email}</p>
         </div>
         <button
-          onClick={() => signOut({ callbackUrl: '/login' })}
+          onClick={async () => {
+            await signOut({ redirect: false });
+            window.location.href = '/login';
+          }}
           className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-white/70 hover:bg-white/10 hover:text-white transition-colors"
         >
           <LogOut className="w-5 h-5" />

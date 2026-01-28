@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { 
@@ -21,7 +21,7 @@ import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { ku, formatIQD } from '@/lib/translations';
 import { CLASS_TIMES } from '@/lib/billing';
-import { redirect } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 
 interface Admin {
   id: string;
@@ -32,11 +32,15 @@ interface Admin {
   lastLogin: string | null;
   createdAt: string;
   assignedClassTimes: string | null;
+  assignedGender?: string | null;
   todayCollection?: number;
 }
 
 async function fetchAdmins() {
-  const res = await fetch('/api/admins');
+  const res = await fetch('/api/admins', { 
+    cache: 'no-store',
+    headers: { 'Pragma': 'no-cache' } 
+  });
   if (!res.ok) throw new Error('Failed to fetch admins');
   return res.json();
 }
@@ -45,18 +49,22 @@ export default function AdminsPage() {
   const { data: session } = useSession();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const router = useRouter();
+  const isSuperAdmin = session?.user?.role === 'super_admin';
   
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingAdmin, setEditingAdmin] = useState<Admin | null>(null);
   
-  // Only super admin can access this page
-  if (session?.user?.role !== 'super_admin') {
-    redirect('/dashboard');
-  }
+  useEffect(() => {
+    if (session && !isSuperAdmin) {
+      router.push('/dashboard');
+    }
+  }, [session, isSuperAdmin, router]);
 
   const { data: admins = [], isLoading } = useQuery({
     queryKey: ['admins'],
     queryFn: fetchAdmins,
+    enabled: isSuperAdmin,
   });
 
   const deleteMutation = useMutation({
@@ -116,8 +124,12 @@ export default function AdminsPage() {
     const times = admin.assignedClassTimes.split(',');
     return times.map(t => ku.classTimes[t as keyof typeof ku.classTimes] || t).join('، ');
   };
+  const getAssignedGenderDisplay = (admin: Admin) => {
+    if (!admin.assignedGender) return '';
+    return admin.assignedGender === 'male' ? ku.students.male : ku.students.female;
+  };
 
-  return (
+  return !isSuperAdmin ? null : (
     <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
@@ -159,7 +171,9 @@ export default function AdminsPage() {
                 {/* Info */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <h3 className="font-medium text-gray-900">{admin.fullName}</h3>
+                    <h3 className="font-bold text-gray-900">
+                      {admin.fullName || (admin as any).full_name || 'بێ ناو'}
+                    </h3>
                     {!admin.isActive && (
                       <span className="px-1.5 py-0.5 text-xs rounded bg-red-100 text-red-600">
                         {ku.admins.inactive}
@@ -175,7 +189,10 @@ export default function AdminsPage() {
                   {admin.role !== 'super_admin' && (
                     <div className="flex items-center gap-2 mt-1 text-xs text-gray-500">
                       <Calendar className="w-3 h-3" />
-                      <span className="truncate">{getAssignedClassTimesDisplay(admin)}</span>
+                      <span className="truncate">
+                        {getAssignedClassTimesDisplay(admin)}
+                        {getAssignedGenderDisplay(admin) ? ` • ${getAssignedGenderDisplay(admin)}` : ''}
+                      </span>
                     </div>
                   )}
                   
@@ -290,6 +307,7 @@ function AddAdminModal({
     email: '',
     password: '',
     assignedClassTimes: [] as string[],
+    assignedGender: 'male',
   });
 
   const handleClassTimeToggle = (classTime: string) => {
@@ -315,13 +333,18 @@ function AddAdminModal({
         }),
       });
 
-      if (!res.ok) throw new Error('Failed to create admin');
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => null);
+        const message = typeof errorData?.error === 'string' ? errorData.error : ku.errors.generic;
+        throw new Error(message);
+      }
 
       toast({ title: 'بەڕێوەبەر زیادکرا' });
-      setFormData({ fullName: '', email: '', password: '', assignedClassTimes: [] });
+      setFormData({ fullName: '', email: '', password: '', assignedClassTimes: [], assignedGender: 'male' });
       onSuccess();
     } catch (error) {
-      toast({ title: ku.errors.generic, variant: 'destructive' });
+      const message = error instanceof Error ? error.message : ku.errors.generic;
+      toast({ title: message, variant: 'destructive' });
     } finally {
       setIsLoading(false);
     }
@@ -408,6 +431,36 @@ function AddAdminModal({
               ))}
             </div>
           </div>
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              {ku.students.gender}
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setFormData({ ...formData, assignedGender: 'male' })}
+                className={`py-2 px-3 rounded-xl text-sm font-medium transition-colors ${
+                  formData.assignedGender === 'male'
+                    ? 'bg-blue-500 text-white'
+                    : 'bg-gray-100 text-gray-700'
+                }`}
+              >
+                {ku.students.male}
+              </button>
+              <button
+                type="button"
+                onClick={() => setFormData({ ...formData, assignedGender: 'female' })}
+                className={`py-2 px-3 rounded-xl text-sm font-medium transition-colors ${
+                  formData.assignedGender === 'female'
+                    ? 'bg-pink-500 text-white'
+                    : 'bg-gray-100 text-gray-700'
+                }`}
+              >
+                {ku.students.female}
+              </button>
+            </div>
+          </div>
 
           <div className="pt-4 safe-bottom">
             <Button
@@ -440,6 +493,7 @@ function EditAdminModal({
     email: admin.email,
     role: admin.role,
     assignedClassTimes: admin.assignedClassTimes?.split(',').filter(Boolean) || [],
+    assignedGender: admin.assignedGender || 'male',
   });
 
   const handleClassTimeToggle = (classTime: string) => {
@@ -465,12 +519,17 @@ function EditAdminModal({
         }),
       });
 
-      if (!res.ok) throw new Error('Failed to update admin');
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => null);
+        const message = typeof errorData?.error === 'string' ? errorData.error : ku.errors.generic;
+        throw new Error(message);
+      }
 
       toast({ title: 'بەڕێوەبەر نوێکرایەوە' });
       onSuccess();
     } catch (error) {
-      toast({ title: ku.errors.generic, variant: 'destructive' });
+      const message = error instanceof Error ? error.message : ku.errors.generic;
+      toast({ title: message, variant: 'destructive' });
     } finally {
       setIsLoading(false);
     }
@@ -570,6 +629,38 @@ function EditAdminModal({
                     {ku.classTimes[classTime as keyof typeof ku.classTimes] || classTime}
                   </button>
                 ))}
+              </div>
+            </div>
+          )}
+          
+          {formData.role === 'admin' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                {ku.students.gender}
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, assignedGender: 'male' })}
+                  className={`py-2 px-3 rounded-xl text-sm font-medium transition-colors ${
+                    formData.assignedGender === 'male'
+                      ? 'bg-blue-500 text-white'
+                      : 'bg-gray-100 text-gray-700'
+                  }`}
+                >
+                  {ku.students.male}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, assignedGender: 'female' })}
+                  className={`py-2 px-3 rounded-xl text-sm font-medium transition-colors ${
+                    formData.assignedGender === 'female'
+                      ? 'bg-pink-500 text-white'
+                      : 'bg-gray-100 text-gray-700'
+                  }`}
+                >
+                  {ku.students.female}
+                </button>
               </div>
             </div>
           )}

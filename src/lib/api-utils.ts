@@ -18,6 +18,12 @@ export async function createAuditLog(params: AuditLogParams): Promise<void> {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return;
 
+  const adminExists = await prisma.admin.findUnique({
+    where: { id: session.user.id },
+    select: { id: true },
+  });
+  if (!adminExists) return;
+
   await prisma.auditLog.create({
     data: {
       adminId: session.user.id,
@@ -54,6 +60,17 @@ export async function requireAuth(): Promise<{ adminId: string; role: string } |
   if (!session?.user?.id) {
     return NextResponse.json(
       { error: 'Unauthorized' },
+      { status: 401 }
+    );
+  }
+
+  const adminExists = await prisma.admin.findUnique({
+    where: { id: session.user.id },
+    select: { id: true },
+  });
+  if (!adminExists) {
+    return NextResponse.json(
+      { error: 'Admin account not found. Please logout and login again.' },
       { status: 401 }
     );
   }

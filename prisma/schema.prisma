@@ -39,6 +39,7 @@ model Student {
   status          String    @default("active") // "active", "inactive"
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
+  isForgiven      Boolean   @default(false) @map("is_forgiven")
 
   // Relations
   payments Payment[]
@@ -76,8 +77,36 @@ model Payment {
 
   // Relations
   student         Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  bookSales       BookSale[]
 
   @@map("payments")
+}
+
+model Book {
+  id          String     @id @default(uuid())
+  title       String
+  price       Int
+  active      Boolean    @default(true)
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+  sales       BookSale[]
+
+  @@map("books")
+}
+
+model BookSale {
+  id              String   @id @default(uuid())
+  bookId          String   @map("book_id")
+  paymentId       String   @map("payment_id")
+  quantity        Int      @default(1)
+  unitPrice       Int      @map("unit_price") // Price at time of sale
+  totalAmount     Int      @map("total_amount")
+  
+  // Relations
+  book            Book     @relation(fields: [bookId], references: [id])
+  payment         Payment  @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@map("book_sales")
 }
 
 model Admin {
@@ -87,6 +116,7 @@ model Admin {
   fullName          String    @map("full_name")
   role              String    @default("admin") // "admin", "super_admin"
   assignedClassTimes String?  @map("assigned_class_times") // Comma-separated: "saturday_morning,saturday_evening"
+  assignedGender    String?   @map("assigned_gender") // "male" or "female"
   isActive          Boolean   @default(true) @map("is_active")
   lastLogin         DateTime? @map("last_login")
   createdAt         DateTime  @default(now()) @map("created_at")

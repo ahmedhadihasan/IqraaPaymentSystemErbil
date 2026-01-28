@@ -168,6 +168,7 @@ model Admin {
   passwordHash String    @map("password_hash")
   fullName     String    @map("full_name")
   role         AdminRole @default(admin)
+  assignedGender String? @map("assigned_gender")
   isActive     Boolean   @default(true) @map("is_active")
   lastLogin    DateTime? @map("last_login")
   createdAt    DateTime  @default(now()) @map("created_at")

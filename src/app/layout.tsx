@@ -4,8 +4,8 @@ import { Providers } from '@/components/providers';
 import { Toaster } from '@/components/ui/toaster';
 
 export const metadata: Metadata = {
-  title: 'ئیقرائ - سیستەمی بەڕێوەبردنی بەشداریکردن',
-  description: 'سیستەمی بەڕێوەبردنی بەشداریکردنی قوتابیان بۆ ڕێکخراوی ئیقرائ',
+  title: 'رێکخراوی اقرا - لقی هەولێر - سیستەمی بەڕێوەبردنی ئابوونە',
+  description: 'سیستەمی بەڕێوەبردنی بەشداریکردنی قوتابیان بۆ رێکخراوی اقرا - لقی هەولێر',
   manifest: '/manifest.json',
 };
 

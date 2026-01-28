@@ -3,6 +3,8 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { normalizeText, createSearchPattern } from '@/lib/text-utils';
+import { SEMESTER } from '@/lib/billing';
+import { createAuditLog } from '@/lib/api-utils';
 
 /**
  * GET /api/students - List students with filters
@@ -24,6 +26,7 @@ export async function GET(request: NextRequest) {
 
     // Get admin's assigned class times if filtering by "my students"
     let adminClassTimes: string[] = [];
+    let adminGender = '';
     if (myStudentsOnly) {
       if (session.user.role === 'super_admin') {
         // Super admin sees all students in "my students" view
@@ -31,9 +34,11 @@ export async function GET(request: NextRequest) {
       } else {
         const admin = await prisma.admin.findUnique({
           where: { id: session.user.id },
-          select: { assignedClassTimes: true },
-        });
-        adminClassTimes = admin?.assignedClassTimes?.split(',').filter(Boolean) || [];
+          select: { assignedClassTimes: true, assignedGender: true },
+        } as any);
+        adminClassTimes = (admin?.assignedClassTimes || (admin as any)?.assigned_class_times || '')
+          .split(',').filter(Boolean) || [];
+        adminGender = (admin as any)?.assignedGender || (admin as any)?.assigned_gender || '';
       }
     }
 
@@ -44,8 +49,19 @@ export async function GET(request: NextRequest) {
     if (classTime) where.classTime = classTime;
     
     // Filter by admin's class times
-    if (myStudentsOnly && adminClassTimes.length > 0) {
-      where.classTime = { in: adminClassTimes };
+    if (myStudentsOnly) {
+      if (session.user.role !== 'super_admin') {
+        if (adminClassTimes.length > 0) {
+          where.classTime = { in: adminClassTimes };
+        } else {
+          // If no classes assigned, return no students
+          where.classTime = 'none_assigned';
+        }
+        
+        if (adminGender) {
+          where.gender = adminGender;
+        }
+      }
     }
 
     // Get students
@@ -81,7 +97,7 @@ export async function GET(request: NextRequest) {
 
     // Filter unpaid students (no payment for current semester)
     if (unpaidOnly) {
-      const semesterStart = new Date('2026-01-01');
+      const semesterStart = SEMESTER.START;
       students = students.filter(student => {
         const latestPayment = student.payments[0];
         if (!latestPayment) return true;
@@ -92,7 +108,7 @@ export async function GET(request: NextRequest) {
     // Remove payments from response for cleaner data
     const cleanStudents = students.map(({ payments, ...student }) => ({
       ...student,
-      hasPaid: payments.length > 0 && new Date(payments[0]?.periodEnd || 0) >= new Date('2026-01-01'),
+      hasPaid: payments.length > 0 && new Date(payments[0]?.periodEnd || 0) >= SEMESTER.START,
     }));
 
     return NextResponse.json(cleanStudents);
@@ -142,17 +158,14 @@ export async function POST(request: NextRequest) {
     });
 
     // Create audit log for student creation
-    await prisma.auditLog.create({
-      data: {
-        adminId: session.user.id,
-        action: 'CREATE',
-        entityType: 'Student',
-        entityId: student.id,
-        details: JSON.stringify({
-          name: student.name,
-          gender: student.gender,
-          classTime: student.classTime,
-        }),
+    await createAuditLog({
+      action: 'CREATE',
+      entityType: 'Student',
+      entityId: student.id,
+      details: {
+        name: student.name,
+        gender: student.gender,
+        classTime: student.classTime,
       },
     });
 
@@ -165,4 +178,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-

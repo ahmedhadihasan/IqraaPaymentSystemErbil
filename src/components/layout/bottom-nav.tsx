@@ -7,7 +7,8 @@ import {
   Users, 
   CreditCard, 
   Settings,
-  Plus
+  Plus,
+  BookOpen
 } from 'lucide-react';
 import { ku } from '@/lib/translations';
 
@@ -15,6 +16,7 @@ const navItems = [
   { href: '/dashboard', icon: Home, label: ku.nav.dashboard },
   { href: '/dashboard/students/my-students', icon: Users, label: ku.nav.myStudents },
   { href: '/dashboard/payments', icon: CreditCard, label: ku.nav.payments },
+  { href: '/dashboard/books', icon: BookOpen, label: ku.nav.books },
   { href: '/dashboard/settings', icon: Settings, label: ku.nav.settings },
 ];
 

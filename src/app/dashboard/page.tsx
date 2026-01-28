@@ -47,20 +47,29 @@ interface DashboardStats {
     amount: number;
   }>;
   periodCollection?: number;
+  studentCollection?: number;
+  bookCollection?: number;
   isSuperAdmin: boolean;
   adminClassTimes: string[];
 }
 
 export default function DashboardPage() {
-  const [period, setPeriod] = useState<'today' | 'week' | 'month' | 'all'>('today');
+  const [period, setPeriod] = useState<'today' | 'week' | 'month' | 'custom' | 'all'>('today');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
   const [isExporting, setIsExporting] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
 
   const { data, isLoading, refetch } = useQuery({
-    queryKey: ['dashboardStats', period],
+    queryKey: ['dashboardStats', period, startDate, endDate],
     queryFn: async (): Promise<DashboardStats> => {
-      const res = await fetch(`/api/dashboard/stats?period=${period}`);
+      const query = new URLSearchParams({ period });
+      if (period === 'custom' && startDate && endDate) {
+        query.append('startDate', startDate);
+        query.append('endDate', endDate);
+      }
+      const res = await fetch(`/api/dashboard/stats?${query.toString()}`);
       if (!res.ok) throw new Error('Failed to fetch stats');
       return res.json();
     },
@@ -89,9 +98,10 @@ export default function DashboardPage() {
   };
 
   const periodLabels = {
-    today: ku.common.today,
-    week: ku.dashboard.lastWeek,
-    month: ku.dashboard.lastMonth,
+    today: 'ئەمڕۆ',
+    week: 'ئەم هەفتەیە (شەممە - هەینی)',
+    month: 'ئەم مانگە',
+    custom: 'ماوەی دیاریکراو',
     all: ku.dashboard.allTime,
   };
 
@@ -128,29 +138,23 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Unpaid Students Alert */}
-        {(data?.unpaidStudents || 0) > 0 && (
-          <div className="mobile-card col-span-2 bg-red-50 border border-red-200">
+        {/* Forgiven Students Card */}
+        <Link href="/dashboard/students/forgiven" className="col-span-2">
+          <div className="mobile-card bg-amber-50 border border-amber-200 active:bg-amber-100 transition-colors">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center">
-                <AlertCircle className="w-5 h-5 text-red-600" />
+              <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center">
+                <UserCheck className="w-5 h-5 text-amber-600" />
               </div>
               <div className="flex-1">
-                <p className="text-red-800 font-medium">{ku.dashboard.unpaidStudents}</p>
-                <p className="text-2xl font-bold text-red-600">
-                  {data?.unpaidStudents || 0}
-                </p>
+                <p className="text-amber-800 font-medium">خوێندکارە لێخۆشبووەکان</p>
+                <p className="text-sm text-amber-600">بەڕێوەبردنی ئەو خوێندکارانەی لێیان خۆشبووین</p>
               </div>
-              <Link href="/dashboard/students/my-students">
-                <Button size="sm" variant="outline" className="border-red-300 text-red-600">
-                  {ku.common.view}
-                </Button>
-              </Link>
+              <ArrowRight className="w-5 h-5 text-amber-400 rotate-180" />
             </div>
           </div>
-        )}
+        </Link>
 
-        {/* Today's Payments */}
+        {/* Today's Payments Quick Stats */}
         <div className="mobile-card">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center">
@@ -165,7 +169,6 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Today's Amount */}
         <div className="mobile-card">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center">
@@ -179,30 +182,101 @@ export default function DashboardPage() {
             </div>
           </div>
         </div>
+      </div>
 
-        {/* Sibling Payments Today */}
-        <Link href="/dashboard/payments/siblings" className="col-span-2">
-          <div className="mobile-card bg-purple-50 border border-purple-200 active:bg-purple-100 transition-colors">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-purple-100 rounded-xl flex items-center justify-center">
-                <UsersRound className="w-5 h-5 text-purple-600" />
+      {/* Super Admin: Collection Split & Periods */}
+      {data?.isSuperAdmin && (
+        <div className="mobile-card">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-bold text-gray-900 flex items-center gap-2">
+              <Calendar className="w-5 h-5 text-primary" />
+              کۆکراوە بەپێی ماوە
+            </h3>
+          </div>
+          
+          <div className="flex gap-2 mb-4 overflow-x-auto pb-2 no-scrollbar">
+            {(['today', 'week', 'month', 'custom', 'all'] as const).map((p) => (
+              <button
+                key={p}
+                onClick={() => setPeriod(p)}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
+                  period === p
+                    ? 'bg-primary text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                {periodLabels[p]}
+              </button>
+            ))}
+          </div>
+
+          {period === 'custom' && (
+            <div className="grid grid-cols-2 gap-2 mb-4 p-3 bg-gray-50 rounded-xl border border-gray-100">
+              <div>
+                <label className="text-[10px] text-gray-500 block mb-1">لە بەرواری</label>
+                <input 
+                  type="date" 
+                  value={startDate} 
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="w-full text-xs border rounded-lg p-2"
+                />
               </div>
-              <div className="flex-1">
-                <p className="text-purple-800 font-medium">پارەدانی خوشک و برا (ئەمڕۆ)</p>
-                <div className="flex gap-4 mt-1">
-                  <span className="text-sm text-purple-600">
-                    {data?.siblingPaymentsCount || 0} پارەدان
-                  </span>
-                  <span className="text-sm font-bold text-purple-700">
-                    {formatIQD(data?.siblingPaymentsAmount || 0)}
-                  </span>
+              <div>
+                <label className="text-[10px] text-gray-500 block mb-1">بۆ بەرواری</label>
+                <input 
+                  type="date" 
+                  value={endDate} 
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="w-full text-xs border rounded-lg p-2"
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-3">
+            {/* Total Card */}
+            <Link 
+              href={`/dashboard/payments?period=${period}${period === 'custom' ? `&startDate=${startDate}&endDate=${endDate}` : ''}`}
+            >
+              <div className="p-4 bg-green-500 text-white rounded-2xl shadow-sm active:scale-[0.98] transition-all">
+                <div className="flex items-center justify-between">
+                  <span className="text-white/80 text-sm font-medium">کۆکراوەی گشتی ({periodLabels[period]})</span>
+                  <ArrowRight className="w-4 h-4 rotate-180 opacity-60" />
                 </div>
+                <p className="text-2xl font-bold mt-1">
+                  {formatIQD((data?.studentCollection || 0) + (data?.bookCollection || 0))}
+                </p>
               </div>
-              <ArrowRight className="w-5 h-5 text-purple-400 rotate-180" />
+            </Link>
+
+            {/* Split Cards */}
+            <div className="grid grid-cols-2 gap-3">
+              <Link href={`/dashboard/payments?type=single&period=${period}${period === 'custom' ? `&startDate=${startDate}&endDate=${endDate}` : ''}`}>
+                <div className="p-4 bg-blue-50 border border-blue-100 rounded-2xl active:bg-blue-100 transition-colors">
+                  <div className="flex items-center justify-between">
+                    <p className="text-blue-600 text-xs font-medium">خوێندکاران</p>
+                    <ArrowRight className="w-3 h-3 text-blue-400 rotate-180" />
+                  </div>
+                  <p className="text-lg font-bold text-blue-900 mt-1">
+                    {formatIQD(data?.studentCollection || 0)}
+                  </p>
+                </div>
+              </Link>
+              <Link href="/dashboard/books">
+                <div className="p-4 bg-purple-50 border border-purple-100 rounded-2xl h-full active:bg-purple-100 transition-colors">
+                  <div className="flex items-center justify-between">
+                    <p className="text-purple-600 text-xs font-medium">کتێبەکان</p>
+                    <ArrowRight className="w-3 h-3 text-purple-400 rotate-180" />
+                  </div>
+                  <p className="text-lg font-bold text-purple-900 mt-1">
+                    {formatIQD(data?.bookCollection || 0)}
+                  </p>
+                </div>
+              </Link>
             </div>
           </div>
-        </Link>
-      </div>
+        </div>
+      )}
 
       {/* Super Admin: Collection by Admin */}
       {data?.isSuperAdmin && data.collectionByAdmin && data.collectionByAdmin.length > 0 && (
@@ -222,41 +296,8 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Super Admin: Period Collection Filter */}
-      {data?.isSuperAdmin && (
-        <div className="mobile-card">
-          <h3 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
-            <Calendar className="w-5 h-5 text-primary" />
-            {ku.dashboard.periodCollection}
-          </h3>
-          <div className="flex gap-2 mb-3 flex-wrap">
-            {(['today', 'week', 'month', 'all'] as const).map((p) => (
-              <button
-                key={p}
-                onClick={() => setPeriod(p)}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                  period === p
-                    ? 'bg-primary text-white'
-                    : 'bg-gray-100 text-gray-600'
-                }`}
-              >
-                {periodLabels[p]}
-              </button>
-            ))}
-          </div>
-          {period !== 'today' && (
-            <div className="p-4 bg-green-50 rounded-xl text-center">
-              <p className="text-sm text-gray-600">{periodLabels[period]}</p>
-              <p className="text-2xl font-bold text-green-600 mt-1">
-                {formatIQD(data?.periodCollection || 0)}
-              </p>
-            </div>
-          )}
-        </div>
-      )}
-
       {/* Recent Payments */}
-      <div>
+      <div className="mt-8">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-lg font-bold text-gray-900">{ku.dashboard.recentPayments}</h2>
           <Link href="/dashboard/payments" className="text-primary text-sm font-medium">
@@ -266,7 +307,6 @@ export default function DashboardPage() {
         
         <div className="space-y-2">
           {isLoading ? (
-            // Loading skeleton
             [...Array(3)].map((_, i) => (
               <div key={i} className="mobile-card animate-pulse">
                 <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
@@ -299,44 +339,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Today's Transactions */}
-      {data?.todayTransactions && data.todayTransactions.length > 0 && (
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-bold text-gray-900">پارەدانەکانی ئەمڕۆ</h2>
-            <span className="text-sm text-gray-500">{data.todayTransactions.length} پارەدان</span>
-          </div>
-          
-          <div className="space-y-2">
-            {data.todayTransactions.map((payment) => (
-              <div key={payment.id} className="mobile-card">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium text-gray-900">{payment.studentName}</p>
-                    {payment.siblingNames && (
-                      <p className="text-xs text-purple-600">+ {payment.siblingNames}</p>
-                    )}
-                    <p className="text-xs text-gray-500 mt-1">
-                      {new Date(payment.paymentDate).toLocaleTimeString('ku-IQ', { hour: '2-digit', minute: '2-digit' })}
-                      {payment.recordedByName && (
-                        <span className="mr-2">• {payment.recordedByName}</span>
-                      )}
-                    </p>
-                  </div>
-                  <div className="text-left">
-                    <span className="font-bold text-green-600">{formatIQD(payment.amount)}</span>
-                    <p className="text-xs text-gray-400">
-                      {payment.paymentType === 'family' ? 'خوشک و برا' : payment.paymentType === 'single' ? 'تاک' : payment.paymentType}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Payment Modal */}
+      {/* Record Payment Modal */}
       <RecordPaymentModal
         open={showPaymentModal}
         onClose={() => {

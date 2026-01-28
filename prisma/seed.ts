@@ -7,13 +7,34 @@ async function main() {
   console.log('🌱 Seeding database...');
 
   // Clear existing data
+  await prisma.auditLog.deleteMany(); // Delete logs first
+  await prisma.bookSale.deleteMany();
+  await prisma.book.deleteMany();
   await prisma.payment.deleteMany();
   await prisma.student.deleteMany();
+  
+  // Set all createdBy to null to break self-references
+  await prisma.admin.updateMany({ data: { createdBy: null } });
   await prisma.admin.deleteMany();
   await prisma.systemConfig.deleteMany();
 
   // Hash password
   const hashedPassword = await bcrypt.hash('Admin@123', 12);
+
+  // Ensure general student for anonymous book sales exists
+  await prisma.student.upsert({
+    where: { id: "00000000-0000-0000-0000-000000000000" },
+    update: {},
+    create: {
+      id: "00000000-0000-0000-0000-000000000000",
+      name: "فرۆشتنی گشتی",
+      gender: "male",
+      status: "active",
+      birthYear: "2026",
+      nameNormalized: "فرۆشتنی گشتی",
+      joinDate: new Date('2026-01-01'),
+    }
+  });
 
   // Create Super Admin
   const superAdmin = await prisma.admin.create({
@@ -158,6 +179,16 @@ async function main() {
     });
   }
   console.log('✅ Created sample students');
+
+  // Create initial books
+  await prisma.book.createMany({
+    data: [
+      { title: 'بنچینە نوورانییەکان', price: 1000 },
+      { title: 'جز عم', price: 2000 },
+      { title: 'قاعیدەی عەرەبی', price: 1500 },
+    ],
+  });
+  console.log('✅ Created initial books');
 
   // Create system config
   await prisma.systemConfig.create({

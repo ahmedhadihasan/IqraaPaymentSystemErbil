@@ -12,6 +12,12 @@
 
 # production
 /build
+/backups
+/prisma/dev.db
+/prisma/dev.db*
+/Student Names/
+/check-admins.js
+/test-update.js
 
 # misc
 .DS_Store

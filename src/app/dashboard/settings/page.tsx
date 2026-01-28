@@ -108,7 +108,7 @@ export default function SettingsPage() {
       {/* Footer */}
       <div className="text-center text-sm text-gray-400 py-4">
         <p>© 2026 {ku.appName}</p>
-        <p className="mt-1">جاوهەری بۆ ڕێکخراوی ئیقرائ</p>
+        <p className="mt-1">رێکخراوی اقرا - لقی هەولێر @2026</p>
       </div>
       
         {/* Danger Zone for Super Admin */}
