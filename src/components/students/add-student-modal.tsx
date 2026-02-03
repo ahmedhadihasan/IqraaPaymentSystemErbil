@@ -26,6 +26,8 @@ interface AddStudentModalProps {
   onClose: () => void;
   onSuccess: () => void;
   student?: Student | null;
+  defaultGender?: string;
+  defaultClassTime?: string;
 }
 
 const classTimeLabels: Record<string, string> = {
@@ -39,17 +41,17 @@ const classTimeLabels: Record<string, string> = {
   thursday_night: ku.classTimes.thursday_night,
 };
 
-export function AddStudentModal({ open, onClose, onSuccess, student }: AddStudentModalProps) {
+export function AddStudentModal({ open, onClose, onSuccess, student, defaultGender, defaultClassTime }: AddStudentModalProps) {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState<Omit<Student, 'id'>>({
     name: '',
-    gender: 'male',
+    gender: defaultGender || 'male',
     birthYear: '',
     address: '',
     phone: '',
     financialStatus: '',
-    classTime: '',
+    classTime: defaultClassTime || '',
     billingPreference: 'semester',
   });
 
@@ -68,16 +70,16 @@ export function AddStudentModal({ open, onClose, onSuccess, student }: AddStuden
     } else {
       setFormData({
         name: '',
-        gender: 'male',
+        gender: defaultGender || 'male',
         birthYear: '',
         address: '',
         phone: '',
         financialStatus: '',
-        classTime: '',
+        classTime: defaultClassTime || '',
         billingPreference: 'semester',
       });
     }
-  }, [student, open]);
+  }, [student, open, defaultGender, defaultClassTime]);
 
   // Lock body scroll when modal is open
   useEffect(() => {

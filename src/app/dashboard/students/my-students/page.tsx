@@ -66,6 +66,12 @@ async function fetchSemesterPayments() {
   return data.totalAmount || 0;
 }
 
+async function fetchAdminInfo(adminId: string) {
+  const res = await fetch(`/api/admins/${adminId}`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
 export default function MyStudentsPage() {
   const { data: session } = useSession();
   const { toast } = useToast();
@@ -88,6 +94,13 @@ export default function MyStudentsPage() {
   const { data: semesterAmount = 0 } = useQuery({
     queryKey: ['semester-payments', 'my-students', session?.user?.role],
     queryFn: fetchSemesterPayments,
+  });
+
+  // Fetch admin info for default values when adding student
+  const { data: adminInfo } = useQuery({
+    queryKey: ['admin-info', session?.user?.id],
+    queryFn: () => fetchAdminInfo(session?.user?.id || ''),
+    enabled: !!session?.user?.id && session?.user?.role !== 'super_admin',
   });
 
   const deleteMutation = useMutation({
@@ -352,6 +365,15 @@ export default function MyStudentsPage() {
         )}
       </div>
 
+      {/* Floating Add Button */}
+      <button
+        onClick={() => setShowAddModal(true)}
+        className="fab"
+        aria-label={ku.students.addStudent}
+      >
+        <Plus className="w-6 h-6" />
+      </button>
+
       {/* Modals */}
       <AddStudentModal
         open={showAddModal || !!selectedStudent}
@@ -365,6 +387,8 @@ export default function MyStudentsPage() {
           setSelectedStudent(null);
           refetch();
         }}
+        defaultGender={adminInfo?.assignedGender}
+        defaultClassTime={adminInfo?.assignedClassTimes?.split(',')[0]}
       />
 
       <RecordPaymentModal

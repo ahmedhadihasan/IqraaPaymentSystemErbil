@@ -144,6 +144,59 @@ export async function GET(request: NextRequest) {
     });
     const bookCollection = bookPayments.reduce((sum, p) => sum + p.amount, 0);
 
+    // Get collection by admin
+    const allPaymentsInPeriod = await prisma.payment.findMany({
+      where: {
+        voided: false,
+        paymentDate: dateFilter,
+      },
+      select: {
+        amount: true,
+        recordedBy: true,
+        recordedByName: true,
+      },
+    });
+
+    // Group payments by admin
+    const adminCollectionMap = new Map<string, { name: string; amount: number }>();
+    
+    for (const payment of allPaymentsInPeriod) {
+      const adminId = payment.recordedBy || 'unknown';
+      const existing = adminCollectionMap.get(adminId);
+      
+      if (existing) {
+        existing.amount += payment.amount;
+      } else {
+        // Get admin name from recordedByName field or look it up
+        let adminName = payment.recordedByName || 'نەناسراو';
+        
+        if (!payment.recordedByName && payment.recordedBy) {
+          // Look up admin name from database
+          const admin = await prisma.admin.findUnique({
+            where: { id: payment.recordedBy },
+            select: { fullName: true },
+          });
+          if (admin?.fullName) {
+            adminName = admin.fullName;
+          }
+        }
+        
+        adminCollectionMap.set(adminId, {
+          name: adminName,
+          amount: payment.amount,
+        });
+      }
+    }
+
+    // Convert to array and sort by amount
+    const collectionByAdmin = Array.from(adminCollectionMap.entries())
+      .map(([adminId, data]) => ({
+        adminId,
+        adminName: data.name,
+        amount: data.amount,
+      }))
+      .sort((a, b) => b.amount - a.amount);
+
     // Calculate overall stats
     const overallStats = {
       totalStudents: 0,
@@ -179,6 +232,7 @@ export async function GET(request: NextRequest) {
       classes: classesArray,
       overallStats,
       bookCollection,
+      collectionByAdmin,
     });
   } catch (error) {
     console.error('Report error:', error);

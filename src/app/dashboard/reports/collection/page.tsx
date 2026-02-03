@@ -13,11 +13,18 @@ import {
   ChevronDown,
   TrendingUp,
   Check,
-  X
+  X,
+  User
 } from 'lucide-react';
 import { ku, formatIQD } from '@/lib/translations';
 import { CLASS_TIMES, PRICING, SEMESTER } from '@/lib/billing';
 import { cn } from '@/lib/utils';
+
+interface AdminCollection {
+  adminId: string;
+  adminName: string;
+  amount: number;
+}
 
 interface ClassStats {
   classTime: string;
@@ -40,6 +47,7 @@ interface ReportData {
     expectedCollection: number;
   };
   bookCollection: number;
+  collectionByAdmin: AdminCollection[];
 }
 
 async function fetchReportData(period: string, startDate?: string, endDate?: string) {
@@ -220,6 +228,33 @@ export default function CollectionReportPage() {
               <p className="text-xl font-bold text-purple-700">{formatIQD(data.bookCollection)}</p>
             </div>
           </div>
+
+          {/* Collection by Admin */}
+          {data.collectionByAdmin && data.collectionByAdmin.length > 0 && (
+            <div className="space-y-3">
+              <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                <User className="w-5 h-5 text-primary" />
+                کۆکراوە بەپێی بەڕێوەبەر
+              </h2>
+              
+              <div className="space-y-2">
+                {data.collectionByAdmin.map((admin: AdminCollection) => (
+                  <div 
+                    key={admin.adminId} 
+                    className="mobile-card flex items-center justify-between"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center text-white font-bold">
+                        {admin.adminName.charAt(0).toUpperCase()}
+                      </div>
+                      <span className="font-medium text-gray-900">{admin.adminName}</span>
+                    </div>
+                    <span className="font-bold text-green-600">{formatIQD(admin.amount)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Per-Class Stats */}
           <div className="space-y-3">
