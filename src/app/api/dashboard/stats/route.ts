@@ -90,11 +90,25 @@ export async function GET(request: NextRequest) {
     ]);
 
     // Revenue Split (Student vs Books)
+    // For admins, filter by their assigned classes
+    let collectionsWhere: Record<string, any> = {
+      paymentDate: dateFilter,
+      voided: false,
+    };
+    
+    // Build student filter for admin's classes
+    if (!isSuperAdmin && (adminClassTimes.length > 0 || adminGender)) {
+      collectionsWhere.student = {};
+      if (adminClassTimes.length > 0) {
+        collectionsWhere.student.classTime = { in: adminClassTimes };
+      }
+      if (adminGender) {
+        collectionsWhere.student.gender = adminGender;
+      }
+    }
+
     const collections = await prisma.payment.findMany({
-      where: {
-        paymentDate: dateFilter,
-        voided: false,
-      },
+      where: collectionsWhere,
       select: { amount: true, paymentType: true },
     });
 
@@ -129,6 +143,21 @@ export async function GET(request: NextRequest) {
     }
 
     const todayAmountTotal = todayPaymentsAll.reduce((sum, p) => sum + p.amount, 0);
+    
+    // When period is 'today', use the same calculation as todayAmountTotal for consistency
+    // This ensures کۆکراوەی ئەمڕۆ and کۆکراوەی گشتی (ئەمڕۆ) show the same value
+    let finalStudentCollection = studentCollection;
+    let finalBookCollection = bookCollection;
+    
+    if (period === 'today') {
+      finalStudentCollection = todayPaymentsAll
+        .filter(p => p.paymentType !== 'book')
+        .reduce((sum, p) => sum + p.amount, 0);
+      finalBookCollection = todayPaymentsAll
+        .filter(p => p.paymentType === 'book')
+        .reduce((sum, p) => sum + p.amount, 0);
+    }
+    
     const todayPaymentsCount = todayPaymentsAll.length;
     const todayTransactions = todayPaymentsAll.filter(p => p.siblingPaymentId === null);
     const todayRootIds = todayTransactions.map(p => p.id);
@@ -256,9 +285,9 @@ export async function GET(request: NextRequest) {
         recordedByName: p.recordedByName,
       })),
       collectionByAdmin: isSuperAdmin ? collectionByAdmin : undefined,
-      periodCollection: isSuperAdmin ? (studentCollection + bookCollection) : undefined,
-      studentCollection: isSuperAdmin ? studentCollection : undefined,
-      bookCollection: isSuperAdmin ? bookCollection : undefined,
+      periodCollection: finalStudentCollection + finalBookCollection,
+      studentCollection: finalStudentCollection,
+      bookCollection: finalBookCollection,
       isSuperAdmin,
     });
   } catch (error) {

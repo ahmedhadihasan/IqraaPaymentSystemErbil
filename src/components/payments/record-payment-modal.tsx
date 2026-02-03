@@ -18,6 +18,7 @@ import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { ku, formatIQD } from '@/lib/translations';
 import { PRICING, calculateFamilyTotal, SEMESTER } from '@/lib/billing';
+import { toEnglishNumerals } from '@/lib/text-utils';
 import { cn } from '@/lib/utils';
 
 interface Student {
@@ -26,6 +27,7 @@ interface Student {
   gender: string;
   classTime?: string;
   hasPaid?: boolean;
+  billingPreference?: string;
 }
 
 interface RecordPaymentModalProps {
@@ -33,6 +35,9 @@ interface RecordPaymentModalProps {
   onClose: () => void;
   onSuccess: () => void;
   preselectedStudent?: Student | null;
+  lockedBillingType?: 'semester' | 'monthly';
+  defaultBillingType?: 'semester' | 'monthly';
+  lockedMonth?: string; // e.g. '2026-01' - locks to single month payment
 }
 
 // Month definitions for the semester
@@ -49,7 +54,10 @@ export function RecordPaymentModal({
   open, 
   onClose, 
   onSuccess,
-  preselectedStudent 
+  preselectedStudent,
+  lockedBillingType,
+  defaultBillingType,
+  lockedMonth,
 }: RecordPaymentModalProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -57,9 +65,10 @@ export function RecordPaymentModal({
   // -- State --
   
   // Billing Config
-  const [billingType, setBillingType] = useState<'semester' | 'monthly'>('semester');
+  const [billingType, setBillingType] = useState<'semester' | 'monthly'>(() => lockedBillingType ?? defaultBillingType ?? 'semester');
   const [priceMode, setPriceMode] = useState<'standard' | 'free' | 'custom'>('standard');
   const [customAmount, setCustomAmount] = useState<string>('');
+  const [updateStudentPreference, setUpdateStudentPreference] = useState(false);
   
   // Monthly State
   const [selectedMonths, setSelectedMonths] = useState<string[]>([]);
@@ -75,40 +84,121 @@ export function RecordPaymentModal({
   // Notes
   const [notes, setNotes] = useState('');
 
+  const canModifyBillingType = !lockedBillingType;
+
   // -- Queries --
 
   const { data: searchResults = [], isLoading: isSearching } = useQuery({
     queryKey: ['students-search', search],
     queryFn: async () => {
       if (!search || search.length < 1) return [];
-      const res = await fetch(`/api/students?search=${encodeURIComponent(search)}`);
+      const res = await fetch(`/api/students?search=${encodeURIComponent(search)}&forTransaction=true`);
       if (!res.ok) return [];
       return res.json();
     },
     enabled: search.length > 0,
   });
 
+  // Fetch existing payments for selected students to check which months are already paid
+  const selectedStudentIds = selectedStudents.map(s => s.id);
+  const { data: existingPayments = [] } = useQuery({
+    queryKey: ['modal-student-payments', selectedStudentIds.join(',')],
+    queryFn: async () => {
+      if (selectedStudentIds.length === 0) return [];
+      // Use the studentIds parameter for efficient fetching
+      const res = await fetch(`/api/payments?studentIds=${selectedStudentIds.join(',')}`);
+      if (!res.ok) return [];
+      const data = await res.json();
+      return data.payments || [];
+    },
+    enabled: selectedStudentIds.length > 0,
+  });
+
+  // Calculate which months are already paid for the primary student
+  const paidMonths = useMemo(() => {
+    const paid = new Set<string>();
+    if (selectedStudents.length === 0) return paid;
+    
+    const primaryStudentId = selectedStudents[0].id;
+    const studentPayments = existingPayments.filter((p: any) => p.studentId === primaryStudentId);
+    
+    SEMESTER_MONTHS.forEach(month => {
+      const monthStart = new Date(`${month.key}-01`);
+      const isPaid = studentPayments.some((payment: any) => {
+        const periodStart = new Date(payment.periodStart);
+        const periodEnd = new Date(payment.periodEnd);
+        return monthStart >= periodStart && monthStart < periodEnd;
+      });
+      if (isPaid) {
+        paid.add(month.key);
+      }
+    });
+    
+    return paid;
+  }, [selectedStudents, existingPayments]);
+
   // -- Effects --
 
   useEffect(() => {
     if (open) {
       // Reset state
-      setBillingType('semester');
       setPriceMode('standard');
       setCustomAmount('');
-      setSelectedMonths([]);
       setUseCustomStart(false);
       setCustomStartDate('2026-01-01');
       setSearch('');
       setNotes('');
+      setUpdateStudentPreference(false);
+      
+      // Set selected months - if locked to a specific month, only select that one
+      if (lockedMonth) {
+        setSelectedMonths([lockedMonth]);
+      } else {
+        setSelectedMonths([]);
+      }
       
       if (preselectedStudent) {
         setSelectedStudents([preselectedStudent]);
+        // Set billing type based on student's preference unless locked or default is specified
+        if (lockedBillingType) {
+          setBillingType(lockedBillingType);
+        } else if (defaultBillingType) {
+          setBillingType(defaultBillingType);
+          // If default differs from student's preference, auto-check the update preference option
+          const studentPref = preselectedStudent.billingPreference || 'semester';
+          if (studentPref !== defaultBillingType) {
+            setUpdateStudentPreference(true);
+          }
+        } else {
+          const studentPref = (preselectedStudent as any).billingPreference;
+          setBillingType(studentPref === 'monthly' ? 'monthly' : 'semester');
+        }
       } else {
         setSelectedStudents([]);
+        setBillingType(lockedBillingType ?? defaultBillingType ?? 'semester');
       }
     }
-  }, [open, preselectedStudent]);
+  }, [open, preselectedStudent, lockedBillingType, defaultBillingType, lockedMonth]);
+
+  // Lock body scroll when modal is open
+  useEffect(() => {
+    if (open) {
+      const originalStyle = window.getComputedStyle(document.body).overflow;
+      document.body.style.overflow = 'hidden';
+      document.body.style.position = 'fixed';
+      document.body.style.width = '100%';
+      document.body.style.top = `-${window.scrollY}px`;
+      
+      return () => {
+        const scrollY = document.body.style.top;
+        document.body.style.overflow = originalStyle;
+        document.body.style.position = '';
+        document.body.style.width = '';
+        document.body.style.top = '';
+        window.scrollTo(0, parseInt(scrollY || '0') * -1);
+      };
+    }
+  }, [open]);
 
   // -- Calculations --
 
@@ -159,7 +249,18 @@ export function RecordPaymentModal({
       toast({ title: 'ئەم قوتابییە پارەی داوە بۆ ئەم وەرزە', variant: 'destructive' });
       return;
     }
-    setSelectedStudents(prev => [...prev, student]);
+    
+    // If this is the first student being added, set billing type based on their preference
+    if (canModifyBillingType && selectedStudents.length === 0 && student.billingPreference) {
+      setBillingType(student.billingPreference === 'monthly' ? 'monthly' : 'semester');
+    }
+    
+    // For monthly payments, only allow one student (no siblings)
+    if (billingType === 'monthly') {
+      setSelectedStudents([student]);
+    } else {
+      setSelectedStudents(prev => [...prev, student]);
+    }
     setSearch('');
   };
 
@@ -172,9 +273,71 @@ export function RecordPaymentModal({
   const recordPaymentMutation = useMutation({
     mutationFn: async () => {
       if (selectedStudents.length === 0) throw new Error('No students selected');
+      
+      // For monthly payments, validate that months are selected
+      if (billingType === 'monthly' && selectedMonths.length === 0) {
+        throw new Error('تکایە مانگەکان هەڵبژێرە');
+      }
+
+      // Update student billing preferences if requested
+      if (updateStudentPreference) {
+        for (const student of selectedStudents) {
+          if (student.billingPreference !== billingType) {
+            await fetch(`/api/students/${student.id}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ billingPreference: billingType }),
+            });
+          }
+        }
+      }
 
       const mainStudent = selectedStudents[0];
       const siblings = selectedStudents.slice(1);
+
+      // Calculate period for monthly payments based on selected months
+      let periodStart: string | undefined;
+      let periodEnd: string | undefined;
+      
+      if (billingType === 'monthly' && selectedMonths.length > 0) {
+        // For monthly payments, we create ONE payment per month to avoid the range bug
+        // If multiple months selected, we need to create multiple payments
+        const sortedMonths = [...selectedMonths].sort();
+        
+        if (sortedMonths.length === 1) {
+          // Single month - simple case
+          const [year, month] = sortedMonths[0].split('-').map(Number);
+          periodStart = `${sortedMonths[0]}-01`;
+          const lastDay = new Date(year, month, 0).getDate();
+          periodEnd = `${sortedMonths[0]}-${lastDay}`;
+        } else {
+          // Multiple months - only allow consecutive months, or create separate payments
+          // Check if months are consecutive
+          let areConsecutive = true;
+          for (let i = 1; i < sortedMonths.length; i++) {
+            const [prevYear, prevMonth] = sortedMonths[i-1].split('-').map(Number);
+            const [currYear, currMonth] = sortedMonths[i].split('-').map(Number);
+            const expectedNext = prevMonth === 12 ? `${prevYear + 1}-01` : `${prevYear}-${String(prevMonth + 1).padStart(2, '0')}`;
+            if (sortedMonths[i] !== expectedNext) {
+              areConsecutive = false;
+              break;
+            }
+          }
+          
+          if (!areConsecutive) {
+            throw new Error('تکایە تەنها مانگە پەیوەندیدارەکان هەڵبژێرە (مانگە دوای یەک) یان هەر مانگێک جیا پارە بدە');
+          }
+          
+          periodStart = `${sortedMonths[0]}-01`;
+          const lastMonth = sortedMonths[sortedMonths.length - 1];
+          const [year, month] = lastMonth.split('-').map(Number);
+          const lastDay = new Date(year, month, 0).getDate();
+          periodEnd = `${lastMonth}-${lastDay}`;
+        }
+      } else if (billingType === 'semester') {
+        periodStart = useCustomStart ? customStartDate : '2026-01-01';
+        periodEnd = '2026-07-01';
+      }
 
       const payload = {
         studentId: mainStudent.id,
@@ -183,7 +346,8 @@ export function RecordPaymentModal({
         paymentType: selectedStudents.length > 1 ? 'family' : 'single',
         billingMode: billingType,
         monthsCount: billingType === 'monthly' ? selectedMonths.length : 6,
-        periodStart: billingType === 'semester' ? (useCustomStart ? customStartDate : '2026-01-01') : undefined,
+        periodStart,
+        periodEnd,
         notes,
       };
 
@@ -201,8 +365,15 @@ export function RecordPaymentModal({
     },
     onSuccess: () => {
       toast({ title: 'پارەدان بە سەرکەوتوویی تۆمارکرا' });
+      // Invalidate all relevant queries to refresh lists
       queryClient.invalidateQueries({ queryKey: ['dashboardStats'] });
       queryClient.invalidateQueries({ queryKey: ['payments'] });
+      queryClient.invalidateQueries({ queryKey: ['all-payments'] });
+      queryClient.invalidateQueries({ queryKey: ['students'] });
+      queryClient.invalidateQueries({ queryKey: ['monthly-students'] });
+      queryClient.invalidateQueries({ queryKey: ['student-payments'] });
+      queryClient.invalidateQueries({ queryKey: ['modal-student-payments'] });
+      queryClient.invalidateQueries({ queryKey: ['semester-students'] });
       onSuccess();
       onClose();
     },
@@ -214,8 +385,18 @@ export function RecordPaymentModal({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
-      <div className="w-full max-w-4xl bg-white rounded-[2rem] overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+    <div 
+      className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in"
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div 
+        className="w-full sm:max-w-4xl bg-white sm:rounded-[2rem] rounded-t-[2rem] overflow-hidden shadow-2xl flex flex-col"
+        style={{ 
+          maxHeight: 'calc(100vh - env(safe-area-inset-top, 0px) - 1rem)',
+          marginBottom: 'env(safe-area-inset-bottom, 0px)'
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
         
         {/* Header */}
         <div className="p-6 border-b flex items-center justify-between bg-gray-50/50">
@@ -228,12 +409,17 @@ export function RecordPaymentModal({
           </button>
         </div>
 
-          <div className="flex-1 overflow-y-auto overflow-x-hidden">
+        <div 
+          className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain"
+          style={{ WebkitOverflowScrolling: 'touch' }}
+        >
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-0 lg:divide-x lg:divide-x-reverse min-h-full">
             
             {/* LEFT COLUMN: Student Selection */}
             <div className="p-6 space-y-6 bg-gray-50/30">
-              <div>
+              {/* Hide search when monthly mode and a student is already selected */}
+              {!(billingType === 'monthly' && selectedStudents.length > 0) && (
+              <div className="relative">
                 <label className="text-sm font-bold text-gray-700 mb-2 block">قوتابی هەڵبژێرە</label>
                 <div className="relative">
                   <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -247,7 +433,7 @@ export function RecordPaymentModal({
                 
                 {/* Search Results */}
                 {search.length > 0 && (
-                  <div className="mt-2 bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden max-h-60 overflow-y-auto absolute z-10 w-full">
+                  <div className="mt-2 bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden max-h-60 overflow-y-auto absolute z-10 left-0 right-0">
                     {isSearching ? (
                       <div className="p-4 text-center text-gray-500">دەگەڕێت...</div>
                     ) : searchResults.length === 0 ? (
@@ -262,24 +448,28 @@ export function RecordPaymentModal({
                             onClick={() => toggleStudent(s)}
                             disabled={isPaid}
                             className={cn(
-                              "w-full p-3 text-right flex items-center justify-between border-b last:border-0",
+                              "w-full p-3 text-right flex flex-row-reverse items-center gap-3 border-b last:border-0",
                               isPaid ? "bg-green-50 text-green-700 cursor-not-allowed" : "hover:bg-gray-50"
                             )}
                           >
-                            <div className="flex items-center gap-3">
-                              <div className={`w-8 h-8 rounded-full flex items-center justify-center ${s.gender === 'male' ? 'bg-blue-100 text-blue-600' : 'bg-pink-100 text-pink-600'}`}>
+                            <div className="flex items-center gap-3 flex-1 min-w-0">
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${s.gender === 'male' ? 'bg-blue-100 text-blue-600' : 'bg-pink-100 text-pink-600'}`}>
                                 <User className="w-4 h-4" />
                               </div>
-                              <div>
-                                <p className="font-bold text-gray-900">{s.name}</p>
-                                <p className="text-xs text-gray-500">{s.classTime || 'کات دیاری نەکراوە'}</p>
+                              <div className="flex-1 min-w-0 text-right">
+                                <p className="font-bold text-gray-900 truncate">{s.name}</p>
+                                <p className="text-xs text-gray-500 truncate">{s.classTime || 'کات دیاری نەکراوە'}</p>
                               </div>
                             </div>
-                            {isSelected ? (
-                              <Check className="w-5 h-5 text-green-500" />
-                            ) : isPaid ? (
-                              <span className="text-xs font-semibold text-green-700">دراوە ✓</span>
-                            ) : null}
+                            <div className="flex-shrink-0 ml-2">
+                              {isSelected ? (
+                                <Check className="w-5 h-5 text-green-500" />
+                              ) : isPaid ? (
+                                <span className="text-xs font-semibold text-green-700 whitespace-nowrap">✓ دراوە</span>
+                              ) : (
+                                <div className="w-5 h-5 rounded-full border-2 border-gray-300"></div>
+                              )}
+                            </div>
                           </button>
                         );
                       })
@@ -287,15 +477,23 @@ export function RecordPaymentModal({
                   </div>
                 )}
               </div>
+              )}
 
               {/* Selected Students List */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">قوتابیانی دیاریکراو ({selectedStudents.length})</h3>
-                  {selectedStudents.length > 1 && (
+                  <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+                    {billingType === 'monthly' ? 'قوتابی' : `قوتابیانی دیاریکراو (${selectedStudents.length})`}
+                  </h3>
+                  {billingType === 'semester' && selectedStudents.length > 1 && (
                     <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded text-xs font-bold">خوشک و برا</span>
                   )}
                 </div>
+                
+                {/* Monthly mode notice - no siblings allowed */}
+                {billingType === 'monthly' && selectedStudents.length === 0 && (
+                  <p className="text-xs text-gray-500 mt-1">تەنها یەک قوتابی دەتوانیت هەڵبژێریت بۆ پارەدانی مانگانە</p>
+                )}
                 
                 {selectedStudents.length === 0 ? (
                   <div className="text-center py-8 border-2 border-dashed border-gray-200 rounded-2xl bg-white">
@@ -333,26 +531,54 @@ export function RecordPaymentModal({
                 {/* Billing Type Tabs */}
                 <div className="bg-gray-100 p-1 rounded-xl flex gap-1">
                   <button
-                    onClick={() => setBillingType('semester')}
+                    onClick={() => {
+                      if (!canModifyBillingType) return;
+                      setBillingType('semester');
+                    }}
+                    disabled={lockedBillingType === 'monthly'}
                     className={cn(
                       "flex-1 py-2.5 rounded-lg text-sm font-bold transition-all flex items-center justify-center gap-2",
-                      billingType === 'semester' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
+                      billingType === 'semester' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700",
+                      lockedBillingType === 'monthly' ? 'opacity-50 cursor-not-allowed' : ''
                     )}
                   >
                     <Calendar className="w-4 h-4" />
                     وەرز (Semester)
                   </button>
                   <button
-                    onClick={() => setBillingType('monthly')}
+                    onClick={() => {
+                      if (!canModifyBillingType) return;
+                      setBillingType('monthly');
+                    }}
+                    disabled={lockedBillingType === 'semester'}
                     className={cn(
                       "flex-1 py-2.5 rounded-lg text-sm font-bold transition-all flex items-center justify-center gap-2",
-                      billingType === 'monthly' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
+                      billingType === 'monthly' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700",
+                      lockedBillingType === 'semester' ? 'opacity-50 cursor-not-allowed' : ''
                     )}
                   >
                     <CreditCard className="w-4 h-4" />
                     مانگانە
                   </button>
                 </div>
+
+                {/* Update Student Preference Checkbox */}
+                {selectedStudents.length > 0 && selectedStudents.some(s => s.billingPreference !== billingType) && (
+                  <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl animate-fade-in">
+                    <input 
+                      type="checkbox" 
+                      id="updateStudentPreference"
+                      checked={updateStudentPreference}
+                      onChange={e => setUpdateStudentPreference(e.target.checked)}
+                      className="w-4 h-4 rounded border-amber-400 text-amber-600 focus:ring-amber-500"
+                    />
+                    <label htmlFor="updateStudentPreference" className="text-sm font-medium text-amber-800">
+                      {billingType === 'monthly' 
+                        ? 'گۆڕینی قوتابی بۆ پارەدانی مانگانە بۆ داهاتوو'
+                        : 'گۆڕینی قوتابی بۆ پارەدانی وەرزی بۆ داهاتوو'}
+                    </label>
+                  </div>
+                )}
 
                 {/* Type Specific Content */}
                 <div className="min-h-[200px]">
@@ -363,10 +589,10 @@ export function RecordPaymentModal({
                           <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600">
                             <Calendar className="w-4 h-4" />
                           </div>
-                          <p className="font-bold text-blue-900">بەشداری وەرز (٦ مانگ)</p>
+                          <p className="font-bold text-blue-900">بەشداری وەرز (6 مانگ)</p>
                         </div>
                         <p className="text-sm text-blue-700/80 leading-relaxed">
-                          نرخی ئاسایی ٢٥,٠٠٠ دینارە بۆ هەر خوێندکارێک. بۆ خوشک و براکان داشکاندن دەکرێت.
+                          نرخی ئاسایی 25,000 دینارە بۆ هەر خوێندکارێک. بۆ خوشک و براکان داشکاندن دەکرێت.
                         </p>
                       </div>
 
@@ -396,23 +622,53 @@ export function RecordPaymentModal({
                     </div>
                   ) : (
                     <div className="space-y-4 animate-fade-in">
-                       <p className="text-sm font-medium text-gray-500 mb-2">مانگەکان دیاری بکە:</p>
-                       <div className="grid grid-cols-3 gap-2">
-                         {SEMESTER_MONTHS.map(m => (
-                           <button
-                             key={m.key}
-                             onClick={() => toggleMonth(m.key)}
-                             className={cn(
-                               "py-2 px-1 rounded-lg text-xs font-bold border-2 transition-all",
-                               selectedMonths.includes(m.key) 
-                                 ? "border-primary bg-primary/5 text-primary" 
-                                 : "border-transparent bg-gray-50 text-gray-600 hover:bg-gray-100"
-                             )}
-                           >
-                             {m.label}
-                           </button>
-                         ))}
-                       </div>
+                       {lockedMonth ? (
+                         // Single month payment mode - show only the locked month
+                         <div className="bg-primary/10 border-2 border-primary rounded-xl p-4 text-center">
+                           <p className="text-sm font-medium text-gray-500 mb-2">پارەدان بۆ:</p>
+                           <p className="text-xl font-bold text-primary">
+                             {SEMESTER_MONTHS.find(m => m.key === lockedMonth)?.label}
+                           </p>
+                           <p className="text-sm text-gray-500 mt-1">
+                             {formatIQD(PRICING.MONTHLY)}
+                           </p>
+                         </div>
+                       ) : (
+                         // Multi-month selection mode
+                         <>
+                           <p className="text-sm font-medium text-gray-500 mb-2">مانگەکان دیاری بکە:</p>
+                           <div className="grid grid-cols-3 gap-2">
+                             {SEMESTER_MONTHS.map(m => {
+                               const isAlreadyPaid = paidMonths.has(m.key);
+                               const isSelected = selectedMonths.includes(m.key);
+                               
+                               return (
+                                 <button
+                                   key={m.key}
+                                   onClick={() => !isAlreadyPaid && toggleMonth(m.key)}
+                                   disabled={isAlreadyPaid}
+                                   className={cn(
+                                     "py-2 px-1 rounded-lg text-xs font-bold border-2 transition-all relative",
+                                     isAlreadyPaid
+                                       ? "border-green-300 bg-green-100 text-green-700 cursor-not-allowed"
+                                       : isSelected 
+                                         ? "border-primary bg-primary/5 text-primary" 
+                                         : "border-transparent bg-gray-50 text-gray-600 hover:bg-gray-100"
+                                   )}
+                                 >
+                                   {isAlreadyPaid && (
+                                     <Check className="w-3 h-3 absolute top-1 left-1 text-green-600" />
+                                   )}
+                                   {m.label}
+                                   {isAlreadyPaid && (
+                                     <span className="block text-[10px] text-green-600 mt-0.5">دراوە</span>
+                                   )}
+                                 </button>
+                               );
+                             })}
+                           </div>
+                         </>
+                       )}
                        <div className="bg-gray-50 p-3 rounded-xl flex items-center justify-between">
                          <span className="text-sm text-gray-600">نرخی مانگانە:</span>
                          <span className="font-bold text-gray-900">{formatIQD(PRICING.MONTHLY)} / مانگ</span>
@@ -465,11 +721,13 @@ export function RecordPaymentModal({
                   <div className="animate-fade-in">
                     <label className="text-xs font-bold text-gray-500 mb-1 block">بڕی پارە (دینار)</label>
                     <Input 
-                      type="number" 
+                      type="text"
+                      inputMode="numeric"
                       value={customAmount}
-                      onChange={e => setCustomAmount(e.target.value)}
+                      onChange={e => setCustomAmount(toEnglishNumerals(e.target.value))}
                       placeholder="نموونە: 10000"
                       className="text-lg font-bold"
+                      dir="ltr"
                     />
                   </div>
                 )}

@@ -236,7 +236,7 @@ export default function BookTransactionsPage() {
                   <p className="font-bold text-gray-900 truncate">{sale.book?.title || 'کتێب'}</p>
                   <div className="text-xs text-gray-500 flex items-center gap-2">
                     <Calendar className="w-3.5 h-3.5" />
-                    <span>{new Date(sale.payment?.paymentDate || Date.now()).toLocaleDateString('ku-IQ')}</span>
+                    <span>{new Date(sale.payment?.paymentDate || Date.now()).toLocaleDateString('en-GB')}</span>
                   </div>
                   <p className="text-xs text-gray-500 mt-1 truncate">{sale.payment?.student?.name}</p>
                   {sale.payment?.student?.classTime && (
@@ -244,7 +244,11 @@ export default function BookTransactionsPage() {
                   )}
                 </div>
                 <div className="text-left">
-                  <p className="font-bold text-green-600">{formatIQD(sale.payment?.amount || 0)}</p>
+                  {(sale.payment?.amount || 0) === 0 ? (
+                    <p className="font-bold text-amber-600">بەخۆڕایی</p>
+                  ) : (
+                    <p className="font-bold text-green-600">{formatIQD(sale.payment?.amount || 0)}</p>
+                  )}
                 </div>
               </div>
             </div>

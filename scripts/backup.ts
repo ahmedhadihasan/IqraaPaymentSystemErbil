@@ -56,9 +56,22 @@ async function run() {
   const dbUrl = process.env.DATABASE_URL || '';
   if (dbUrl.startsWith('file:')) {
     const rawPath = dbUrl.replace('file:', '');
-    const resolvedPath = path.isAbsolute(rawPath) ? rawPath : path.join(process.cwd(), rawPath);
-    const dbCopyPath = path.join(backupDir, `db-${timestamp}.sqlite`);
-    await fs.copyFile(resolvedPath, dbCopyPath);
+    // Try multiple possible locations for the database file
+    const possiblePaths = [
+      path.isAbsolute(rawPath) ? rawPath : path.join(process.cwd(), rawPath),
+      path.join(process.cwd(), 'prisma', rawPath.replace('./', '')),
+    ];
+    
+    for (const resolvedPath of possiblePaths) {
+      try {
+        await fs.access(resolvedPath);
+        const dbCopyPath = path.join(backupDir, `db-${timestamp}.sqlite`);
+        await fs.copyFile(resolvedPath, dbCopyPath);
+        break;
+      } catch {
+        // Try next path
+      }
+    }
   }
 
   await prisma.$disconnect();

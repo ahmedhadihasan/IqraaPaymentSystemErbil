@@ -95,22 +95,29 @@ export async function PUT(
 
     const body = await request.json();
 
+    // Only include fields that are explicitly provided in the request
+    // This prevents clearing fields when only updating isForgiven
+    const updateData: Record<string, unknown> = {};
+    
+    if (body.name !== undefined) {
+      updateData.name = body.name;
+      updateData.nameNormalized = normalizeText(body.name);
+    }
+    if (body.gender !== undefined) updateData.gender = body.gender;
+    if (body.birthYear !== undefined) updateData.birthYear = body.birthYear || null;
+    if (body.address !== undefined) updateData.address = body.address || null;
+    if (body.phone !== undefined) updateData.phone = body.phone || null;
+    if (body.financialStatus !== undefined) updateData.financialStatus = body.financialStatus || null;
+    if (body.classTime !== undefined) updateData.classTime = body.classTime || null;
+    if (body.classGroup !== undefined) updateData.classGroup = body.classGroup || null;
+    if (body.notes !== undefined) updateData.notes = body.notes || null;
+    if (body.status !== undefined) updateData.status = body.status || 'active';
+    if (body.isForgiven !== undefined) updateData.isForgiven = body.isForgiven;
+    if (body.billingPreference !== undefined) updateData.billingPreference = body.billingPreference;
+
     const student = await prisma.student.update({
       where: { id: params.id },
-      data: {
-        name: body.name,
-        nameNormalized: body.name ? normalizeText(body.name) : undefined,
-        gender: body.gender,
-        birthYear: body.birthYear || null,
-        address: body.address || null,
-        phone: body.phone || null,
-        financialStatus: body.financialStatus || null,
-        classTime: body.classTime || null,  // Added missing classTime field
-        classGroup: body.classGroup || null,
-        notes: body.notes || null,
-        status: body.status || 'active',
-        isForgiven: body.isForgiven !== undefined ? body.isForgiven : undefined,
-      },
+      data: updateData,
     });
 
     // Create audit log

@@ -66,6 +66,7 @@ export async function GET(request: NextRequest) {
         } as any);
         adminGender = (admin as any)?.assignedGender || '';
         adminClassTimes = admin?.assignedClassTimes?.split(',').filter(Boolean) || [];
+        console.log('[BOOK SALES] Admin filter:', { adminId: session.user.id, adminGender, role: session.user.role });
       }
 
       const paymentWhere: Record<string, unknown> = {
@@ -77,15 +78,28 @@ export async function GET(request: NextRequest) {
         paymentWhere.paymentDate = dateFilter;
       }
 
-      const effectiveGenderFilters = adminGender ? [adminGender] : genderFilters;
-      const effectiveClassFilters = adminClassTimes.length > 0 ? adminClassTimes : classTimeFilters;
-
-      if (effectiveGenderFilters.length > 0 || effectiveClassFilters.length > 0) {
-        paymentWhere.student = {
-          ...(effectiveGenderFilters.length > 0 ? { gender: { in: effectiveGenderFilters } } : {}),
-          ...(effectiveClassFilters.length > 0 ? { classTime: { in: effectiveClassFilters } } : {}),
-        };
+      // For super admin: no student filtering unless explicitly requested via URL params
+      // For regular admin: filter by their gender (but not class, since students may not have class yet)
+      const isSuperAdmin = session.user.role === 'super_admin';
+      
+      if (isSuperAdmin) {
+        // Super admin: only apply explicit filters from URL params
+        if (genderFilters.length > 0 || classTimeFilters.length > 0) {
+          paymentWhere.student = {
+            ...(genderFilters.length > 0 ? { gender: { in: genderFilters } } : {}),
+            ...(classTimeFilters.length > 0 ? { classTime: { in: classTimeFilters } } : {}),
+          };
+        }
+      } else {
+        // Regular admin: filter by their assigned gender only (not class, since books can be sold to students without class)
+        if (adminGender) {
+          paymentWhere.student = {
+            gender: adminGender,
+          };
+        }
       }
+
+      console.log('[BOOK SALES] Query paymentWhere:', JSON.stringify(paymentWhere, null, 2));
 
       const sales = await prisma.bookSale.findMany({
         where: {
@@ -98,6 +112,7 @@ export async function GET(request: NextRequest) {
         },
         orderBy: { payment: { createdAt: 'desc' } },
       });
+      console.log('[BOOK SALES] Found', sales.length, 'sales');
       return NextResponse.json(sales);
     }
 

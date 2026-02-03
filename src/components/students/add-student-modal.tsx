@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { ku } from '@/lib/translations';
 import { CLASS_TIMES } from '@/lib/billing';
+import { toEnglishNumerals } from '@/lib/text-utils';
 
 interface Student {
   id?: string;
@@ -17,6 +18,7 @@ interface Student {
   phone: string | null;
   financialStatus: string | null;
   classTime: string | null;
+  billingPreference?: string;
 }
 
 interface AddStudentModalProps {
@@ -48,6 +50,7 @@ export function AddStudentModal({ open, onClose, onSuccess, student }: AddStuden
     phone: '',
     financialStatus: '',
     classTime: '',
+    billingPreference: 'semester',
   });
 
   useEffect(() => {
@@ -60,6 +63,7 @@ export function AddStudentModal({ open, onClose, onSuccess, student }: AddStuden
         phone: student.phone || '',
         financialStatus: student.financialStatus || '',
         classTime: student.classTime || '',
+        billingPreference: student.billingPreference || 'semester',
       });
     } else {
       setFormData({
@@ -70,9 +74,29 @@ export function AddStudentModal({ open, onClose, onSuccess, student }: AddStuden
         phone: '',
         financialStatus: '',
         classTime: '',
+        billingPreference: 'semester',
       });
     }
   }, [student, open]);
+
+  // Lock body scroll when modal is open
+  useEffect(() => {
+    if (open) {
+      const scrollY = window.scrollY;
+      document.body.style.overflow = 'hidden';
+      document.body.style.position = 'fixed';
+      document.body.style.width = '100%';
+      document.body.style.top = `-${scrollY}px`;
+      
+      return () => {
+        document.body.style.overflow = '';
+        document.body.style.position = '';
+        document.body.style.width = '';
+        document.body.style.top = '';
+        window.scrollTo(0, scrollY);
+      };
+    }
+  }, [open]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -91,6 +115,7 @@ export function AddStudentModal({ open, onClose, onSuccess, student }: AddStuden
           address: formData.address || null,
           phone: formData.phone || null,
           financialStatus: formData.financialStatus || null,
+          billingPreference: formData.billingPreference || 'semester',
         }),
       });
 
@@ -113,8 +138,22 @@ export function AddStudentModal({ open, onClose, onSuccess, student }: AddStuden
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/50 flex items-end md:items-center justify-center">
-      <div className="bg-white w-full md:max-w-md md:rounded-2xl rounded-t-2xl max-h-[90vh] overflow-auto animate-slide-up">
+    <div 
+      className="fixed inset-0 z-[100] bg-black/50 flex items-end md:items-center justify-center"
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div 
+        className="bg-white w-full md:max-w-md md:rounded-2xl rounded-t-2xl overflow-hidden animate-slide-up flex flex-col"
+        style={{ 
+          maxHeight: 'calc(100vh - env(safe-area-inset-top, 0px) - 1rem)',
+          marginBottom: 'env(safe-area-inset-bottom, 0px)'
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div 
+          className="flex-1 overflow-y-auto overscroll-contain"
+          style={{ WebkitOverflowScrolling: 'touch' }}
+        >
         {/* Header */}
         <div className="sticky top-0 bg-white border-b border-gray-100 px-4 py-3 flex items-center justify-between">
           <h2 className="text-lg font-bold text-gray-900">
@@ -181,9 +220,9 @@ export function AddStudentModal({ open, onClose, onSuccess, student }: AddStuden
             </label>
             <Input
               value={formData.birthYear || ''}
-              onChange={(e) => setFormData({ ...formData, birthYear: e.target.value })}
+              onChange={(e) => setFormData({ ...formData, birthYear: toEnglishNumerals(e.target.value) })}
               className="mobile-input"
-              placeholder="٢٠١٠"
+              placeholder="2010"
               dir="ltr"
             />
           </div>
@@ -207,6 +246,37 @@ export function AddStudentModal({ open, onClose, onSuccess, student }: AddStuden
             </select>
           </div>
 
+          {/* Billing Preference */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              جۆری پارەدان
+            </label>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setFormData({ ...formData, billingPreference: 'semester' })}
+                className={`flex-1 py-3 rounded-xl font-medium transition-colors ${
+                  formData.billingPreference === 'semester'
+                    ? 'bg-primary text-white'
+                    : 'bg-gray-100 text-gray-700'
+                }`}
+              >
+                وەرزی
+              </button>
+              <button
+                type="button"
+                onClick={() => setFormData({ ...formData, billingPreference: 'monthly' })}
+                className={`flex-1 py-3 rounded-xl font-medium transition-colors ${
+                  formData.billingPreference === 'monthly'
+                    ? 'bg-amber-500 text-white'
+                    : 'bg-gray-100 text-gray-700'
+                }`}
+              >
+                مانگانە
+              </button>
+            </div>
+          </div>
+
           {/* Phone */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -214,7 +284,7 @@ export function AddStudentModal({ open, onClose, onSuccess, student }: AddStuden
             </label>
             <Input
               value={formData.phone || ''}
-              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+              onChange={(e) => setFormData({ ...formData, phone: toEnglishNumerals(e.target.value) })}
               className="mobile-input"
               placeholder="0750 123 4567"
               dir="ltr"
@@ -258,6 +328,7 @@ export function AddStudentModal({ open, onClose, onSuccess, student }: AddStuden
             </Button>
           </div>
         </form>
+        </div>
       </div>
     </div>
   );

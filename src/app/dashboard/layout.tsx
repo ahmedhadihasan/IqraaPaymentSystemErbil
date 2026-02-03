@@ -57,7 +57,7 @@ export default function DashboardLayout({
       </div>
 
       {/* Main content */}
-      <main className="md:mr-64 pb-20 md:pb-0">
+      <main className="md:mr-64 md:pb-0" style={{ paddingBottom: 'calc(5rem + env(safe-area-inset-bottom, 0px))' }}>
         <div className="p-4 md:p-6 max-w-7xl mx-auto">
           {children}
         </div>

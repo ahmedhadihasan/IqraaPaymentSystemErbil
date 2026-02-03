@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { X, Upload, FileText, CheckCircle, AlertCircle, Download, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
@@ -15,6 +15,7 @@ interface CsvImportModalProps {
 interface ImportResult {
   success: boolean;
   imported: number;
+  skipped: number;
   errors: string[];
 }
 
@@ -29,6 +30,25 @@ export function CsvImportModal({ open, onClose, onSuccess }: CsvImportModalProps
   const [allPreviewRows, setAllPreviewRows] = useState<string[][]>([]);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [showAllPreview, setShowAllPreview] = useState(false);
+
+  // Lock body scroll when modal is open
+  useEffect(() => {
+    if (open) {
+      const scrollY = window.scrollY;
+      document.body.style.overflow = 'hidden';
+      document.body.style.position = 'fixed';
+      document.body.style.width = '100%';
+      document.body.style.top = `-${scrollY}px`;
+      
+      return () => {
+        document.body.style.overflow = '';
+        document.body.style.position = '';
+        document.body.style.width = '';
+        document.body.style.top = '';
+        window.scrollTo(0, scrollY);
+      };
+    }
+  }, [open]);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
@@ -70,10 +90,10 @@ export function CsvImportModal({ open, onClose, onSuccess }: CsvImportModalProps
 
   const downloadExampleCSV = () => {
     const exampleContent = `ژمارە,ناوی سیانی,لەدایکبوون,ناونیشان,ژمارەی مۆبایل,بارى دارایی,وانە
-1,ئاراس محمد عبدالله,٢٠١٢,هەولێر - ڕزگاری,07501234567,باش,شەممە بەیانی
-2,هیڤی ئەحمەد حسین,٢٠١٣,هەولێر - عەینکاوە,07512345678,باش,شەممە عەسر
-3,کارزان خالد محمود,٢٠١١,هەولێر - بەختیاری,07523456789,ناوەند,دووشەممە عەسر
-4,شاد ئومێد حمید,٢٠١٤,هەولێر - شۆرش,07534567890,کەم,چوارشەممە عەسر`;
+1,ئاراس محمد عبدالله,2012,هەولێر - ڕزگاری,07501234567,باش,شەممە بەیانی
+2,هیڤی ئەحمەد حسین,2013,هەولێر - عەینکاوە,07512345678,باش,شەممە عەسر
+3,کارزان خالد محمود,2011,هەولێر - بەختیاری,07523456789,ناوەند,دووشەممە عەسر
+4,شاد ئومێد حمید,2014,هەولێر - شۆرش,07534567890,کەم,چوارشەممە عەسر`;
     
     const blob = new Blob(['\ufeff' + exampleContent], { type: 'text/csv;charset=utf-8' });
     const url = window.URL.createObjectURL(blob);
@@ -113,11 +133,13 @@ export function CsvImportModal({ open, onClose, onSuccess }: CsvImportModalProps
       setResult({
         success: true,
         imported: data.imported,
+        skipped: data.skipped || 0,
         errors: data.errors || [],
       });
 
+      const skippedMsg = data.skipped > 0 ? ` (${data.skipped} دووبارە بوون)` : '';
       toast({
-        title: `${data.imported} ${ku.csv.rowsImported}`,
+        title: `${data.imported} ${ku.csv.rowsImported}${skippedMsg}`,
       });
 
       if (data.imported > 0) {
@@ -129,6 +151,7 @@ export function CsvImportModal({ open, onClose, onSuccess }: CsvImportModalProps
       setResult({
         success: false,
         imported: 0,
+        skipped: 0,
         errors: [error.message],
       });
       toast({
@@ -160,8 +183,18 @@ export function CsvImportModal({ open, onClose, onSuccess }: CsvImportModalProps
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/50 flex items-end md:items-center justify-center">
-      <div className="bg-white w-full md:max-w-lg md:rounded-2xl rounded-t-2xl max-h-[90vh] flex flex-col animate-slide-up">
+    <div 
+      className="fixed inset-0 z-[100] bg-black/50 flex items-end md:items-center justify-center"
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div 
+        className="bg-white w-full md:max-w-lg md:rounded-2xl rounded-t-2xl flex flex-col animate-slide-up"
+        style={{ 
+          maxHeight: 'calc(100vh - env(safe-area-inset-top, 0px) - 1rem)',
+          marginBottom: 'env(safe-area-inset-bottom, 0px)'
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="sticky top-0 bg-white border-b border-gray-100 px-4 py-3 flex items-center justify-between z-10 rounded-t-2xl">
           <h2 className="text-lg font-bold text-gray-900">{ku.csv.title}</h2>
@@ -174,7 +207,10 @@ export function CsvImportModal({ open, onClose, onSuccess }: CsvImportModalProps
         </div>
 
         {/* Scrollable Content */}
-        <div className="flex-1 overflow-auto p-4 space-y-4">
+        <div 
+          className="flex-1 overflow-auto p-4 space-y-4 overscroll-contain"
+          style={{ WebkitOverflowScrolling: 'touch' }}
+        >
           {/* Download Example CSV Button */}
           <div className="flex gap-2">
             <button
@@ -319,6 +355,11 @@ export function CsvImportModal({ open, onClose, onSuccess }: CsvImportModalProps
                       : ku.csv.error
                     }
                   </p>
+                  {result.success && result.skipped > 0 && (
+                    <p className="text-sm text-amber-600 mt-1">
+                      {result.skipped} خوێندکار پێشتر بوون (دووبارە زیادنەکران)
+                    </p>
+                  )}
                   {result.errors.length > 0 && (
                     <p className="text-sm text-red-600 mt-1">
                       {result.errors[0]}

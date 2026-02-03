@@ -95,16 +95,17 @@
 
   /* Bottom navigation for mobile */
   .bottom-nav {
-    @apply fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-2 py-2 safe-bottom;
+    @apply fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200;
+    padding: 0.5rem 0.5rem calc(0.5rem + env(safe-area-inset-bottom, 0px));
   }
 
   /* Safe area padding */
   .safe-bottom {
-    padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+    padding-bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px));
   }
   
   .safe-top {
-    padding-top: max(0.75rem, env(safe-area-inset-top));
+    padding-top: calc(0.75rem + env(safe-area-inset-top, 0px));
   }
 
   /* Swipe actions container */
@@ -157,8 +158,10 @@
 
   /* Floating action button */
   .fab {
-    @apply fixed bottom-20 left-4 z-50 w-14 h-14 rounded-full shadow-lg flex items-center justify-center;
+    @apply fixed z-50 w-14 h-14 rounded-full shadow-lg flex items-center justify-center;
     @apply bg-primary text-white active:scale-95 transition-transform;
+    bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
+    left: 1rem;
   }
 
   /* Pull to refresh indicator */
@@ -203,6 +206,21 @@
       opacity: 0;
     }
     to {
+      opacity: 1;
+    }
+  }
+
+  .animate-scale-up {
+    animation: scaleUp 0.2s ease-out;
+  }
+
+  @keyframes scaleUp {
+    from {
+      transform: scale(0.95);
+      opacity: 0;
+    }
+    to {
+      transform: scale(1);
       opacity: 1;
     }
   }

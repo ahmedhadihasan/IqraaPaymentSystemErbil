@@ -15,6 +15,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ku, formatIQD } from '@/lib/translations';
+import { toEnglishNumerals } from '@/lib/text-utils';
 import { useToast } from '@/hooks/use-toast';
 
 interface Book {
@@ -206,10 +207,12 @@ export default function ManageBooksPage() {
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1">نرخ (دینار)</label>
                 <Input 
-                  type="number"
+                  type="text"
+                  inputMode="numeric"
                   value={formData.price} 
-                  onChange={(e) => setFormData({...formData, price: e.target.value})}
+                  onChange={(e) => setFormData({...formData, price: toEnglishNumerals(e.target.value)})}
                   className="mobile-input"
+                  dir="ltr"
                 />
               </div>
               <Button 

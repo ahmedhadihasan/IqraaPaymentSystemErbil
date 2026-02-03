@@ -1,8 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSession } from 'next-auth/react';
+import Link from 'next/link';
 import { 
   Search, 
   Plus, 
@@ -14,12 +15,17 @@ import {
   Gift,
   X,
   UserCheck,
-  BookOpen
+  BookOpen,
+  ChevronLeft,
+  Pencil,
+  Trash2
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { ku, formatIQD } from '@/lib/translations';
+import { toEnglishNumerals } from '@/lib/text-utils';
 import { RecordPaymentModal } from '@/components/payments/record-payment-modal';
 import { CLASS_TIMES } from '@/lib/billing';
+import { useToast } from '@/hooks/use-toast';
 
 interface Payment {
   id: string;
@@ -29,6 +35,7 @@ interface Payment {
   siblingNames: string | null;
   notes: string | null;
   studentName: string;
+  recordedBy: string;
   recordedByName: string;
   periodStart: string | null;
   periodEnd: string | null;
@@ -119,6 +126,34 @@ export default function PaymentsPage() {
             <CreditCard className="w-6 h-6" />
           </div>
         </div>
+      </div>
+
+      {/* Quick Access - Monthly/Semester */}
+      <div className="grid grid-cols-2 gap-3">
+        <Link 
+          href="/dashboard/payments/semester"
+          className="mobile-card bg-gradient-to-br from-primary/10 to-primary/5 border-2 border-primary/20 hover:border-primary/40 transition-all group"
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-primary font-bold text-lg">وەرزی</p>
+              <p className="text-xs text-gray-500">Semester</p>
+            </div>
+            <ChevronLeft className="w-5 h-5 text-primary group-hover:-translate-x-1 transition-transform" />
+          </div>
+        </Link>
+        <Link 
+          href="/dashboard/payments/monthly"
+          className="mobile-card bg-gradient-to-br from-amber-500/10 to-amber-500/5 border-2 border-amber-500/20 hover:border-amber-500/40 transition-all group"
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-amber-600 font-bold text-lg">مانگانە</p>
+              <p className="text-xs text-gray-500">Monthly</p>
+            </div>
+            <ChevronLeft className="w-5 h-5 text-amber-600 group-hover:-translate-x-1 transition-transform" />
+          </div>
+        </Link>
       </div>
 
       {/* Search Bar */}
@@ -236,7 +271,7 @@ export default function PaymentsPage() {
           </div>
         ) : (
           payments.map((payment: Payment) => (
-            <PaymentCard key={payment.id} payment={payment} />
+            <PaymentCard key={payment.id} payment={payment} onRefresh={refetch} />
           ))
         )}
       </div>
@@ -263,9 +298,103 @@ export default function PaymentsPage() {
   );
 }
 
-function PaymentCard({ payment }: { payment: Payment }) {
+function PaymentCard({ payment, onRefresh }: { payment: Payment; onRefresh: () => void }) {
+  const { data: session } = useSession();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [showActions, setShowActions] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editAmount, setEditAmount] = useState(payment.amount.toString());
+  
+  const isSuperAdmin = session?.user?.role === 'super_admin';
+  const isOwnPayment = session?.user?.id === payment.recordedBy;
+  const canModify = isSuperAdmin || isOwnPayment;
+  
   const Icon = paymentTypeIcons[payment.paymentType] || CreditCard;
   const colorClass = paymentTypeColors[payment.paymentType] || 'bg-gray-100 text-gray-600';
+
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/payments/${payment.id}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to delete');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['payments'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboardStats'] });
+      queryClient.invalidateQueries({ queryKey: ['all-payments'] });
+      toast({ title: 'پارەدان سڕایەوە' });
+      onRefresh();
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: 'هەڵە', 
+        description: error.message || 'نەتوانرا پارەدان بسڕێتەوە',
+        variant: 'destructive'
+      });
+    }
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async (newAmount: number) => {
+      const res = await fetch(`/api/payments/${payment.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount: newAmount }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to update');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['payments'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboardStats'] });
+      queryClient.invalidateQueries({ queryKey: ['all-payments'] });
+      toast({ title: 'پارەدان نوێکرایەوە' });
+      setShowEditModal(false);
+      onRefresh();
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: 'هەڵە', 
+        description: error.message || 'نەتوانرا پارەدان نوێبکرێتەوە',
+        variant: 'destructive'
+      });
+    }
+  });
+
+  const handleDelete = () => {
+    if (confirm('دڵنیایت لە سڕینەوەی ئەم پارەدانە؟')) {
+      deleteMutation.mutate();
+    }
+    setShowActions(false);
+  };
+
+  const handleEdit = () => {
+    setEditAmount(payment.amount.toString());
+    setShowEditModal(true);
+    setShowActions(false);
+  };
+
+  const handleSaveEdit = () => {
+    const newAmount = Number(editAmount);
+    if (isNaN(newAmount) || newAmount < 0) {
+      toast({ 
+        title: 'هەڵە', 
+        description: 'بڕی دروست بنووسە',
+        variant: 'destructive'
+      });
+      return;
+    }
+    updateMutation.mutate(newAmount);
+  };
 
   // Format period display
   const formatPeriod = () => {
@@ -276,44 +405,109 @@ function PaymentCard({ payment }: { payment: Payment }) {
   };
 
   return (
-    <div className="mobile-card">
-      <div className="flex items-center gap-3">
-        {/* Icon */}
-        <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${colorClass}`}>
-          <Icon className="w-5 h-5" />
-        </div>
-
-        {/* Info */}
-        <div className="flex-1 min-w-0">
-          <h3 className="font-medium text-gray-900 truncate">{payment.studentName}</h3>
-          <div className="flex items-center gap-2 mt-0.5 text-sm text-gray-500">
-            <Calendar className="w-3.5 h-3.5" />
-            <span>{new Date(payment.paymentDate).toLocaleDateString('ku-IQ')}</span>
+    <>
+      <div 
+        className="mobile-card cursor-pointer relative"
+        onClick={() => canModify && setShowActions(!showActions)}
+      >
+        <div className="flex items-center gap-3">
+          {/* Icon */}
+          <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${colorClass}`}>
+            <Icon className="w-5 h-5" />
           </div>
-          {payment.siblingNames && (
-            <p className="text-xs text-purple-600 mt-1 truncate">
-              + {payment.siblingNames}
-            </p>
-          )}
-          {payment.recordedByName && (
-            <div className="flex items-center gap-1 mt-1 text-xs text-gray-400">
-              <UserCheck className="w-3 h-3" />
-              <span>{payment.recordedByName}</span>
+
+          {/* Info */}
+          <div className="flex-1 min-w-0">
+            <h3 className="font-medium text-gray-900 truncate">{payment.studentName}</h3>
+            <div className="flex items-center gap-2 mt-0.5 text-sm text-gray-500">
+              <Calendar className="w-3.5 h-3.5" />
+              <span>{new Date(payment.paymentDate).toLocaleDateString('en-GB')}</span>
             </div>
-          )}
+            {payment.siblingNames && (
+              <p className="text-xs text-purple-600 mt-1 truncate">
+                + {payment.siblingNames}
+              </p>
+            )}
+            {payment.recordedByName && (
+              <div className="flex items-center gap-1 mt-1 text-xs text-gray-400">
+                <UserCheck className="w-3 h-3" />
+                <span>{payment.recordedByName}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Amount */}
+          <div className="text-left">
+            {payment.amount === 0 ? (
+              <p className="font-bold text-amber-600">بەخۆڕایی</p>
+            ) : (
+              <p className="font-bold text-green-600">{formatIQD(payment.amount)}</p>
+            )}
+            {formatPeriod() && (
+              <p className="text-xs text-gray-500 whitespace-nowrap" dir="ltr">{formatPeriod()}</p>
+            )}
+            {payment.monthsCount && (
+              <p className="text-xs text-gray-400">{payment.monthsCount} {ku.payments.months}</p>
+            )}
+          </div>
         </div>
 
-        {/* Amount */}
-        <div className="text-left">
-          <p className="font-bold text-green-600">{formatIQD(payment.amount)}</p>
-          {formatPeriod() && (
-            <p className="text-xs text-gray-500 whitespace-nowrap" dir="ltr">{formatPeriod()}</p>
-          )}
-          {payment.monthsCount && (
-            <p className="text-xs text-gray-400">{payment.monthsCount} {ku.payments.months}</p>
-          )}
-        </div>
+        {/* Action Buttons - shown when clicked */}
+        {canModify && showActions && (
+          <div className="absolute left-2 top-1/2 -translate-y-1/2 flex gap-2 animate-fade-in">
+            <button
+              onClick={(e) => { e.stopPropagation(); handleEdit(); }}
+              className="p-2 bg-blue-100 text-blue-600 rounded-lg hover:bg-blue-200 transition-colors"
+            >
+              <Pencil className="w-4 h-4" />
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); handleDelete(); }}
+              className="p-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 transition-colors"
+              disabled={deleteMutation.isPending}
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
+        )}
       </div>
-    </div>
+
+      {/* Edit Amount Modal */}
+      {showEditModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowEditModal(false)}>
+          <div className="bg-white rounded-2xl w-full max-w-sm p-6" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-gray-900 mb-4">گۆڕینی بڕی پارە</h3>
+            
+            <div className="mb-4">
+              <label className="block text-sm text-gray-600 mb-2">بڕی نوێ (دینار)</label>
+              <Input
+                type="text"
+                inputMode="numeric"
+                value={editAmount}
+                onChange={(e) => setEditAmount(toEnglishNumerals(e.target.value))}
+                className="mobile-input text-center text-lg font-bold"
+                dir="ltr"
+              />
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowEditModal(false)}
+                className="flex-1 py-3 px-4 rounded-xl border border-gray-200 text-gray-700 font-medium"
+              >
+                هەڵوەشاندنەوە
+              </button>
+              <button
+                onClick={handleSaveEdit}
+                disabled={updateMutation.isPending}
+                className="flex-1 py-3 px-4 rounded-xl bg-primary text-white font-medium disabled:opacity-50"
+              >
+                {updateMutation.isPending ? 'چاوەڕێ بکە...' : 'پاشەکەوتکردن'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }

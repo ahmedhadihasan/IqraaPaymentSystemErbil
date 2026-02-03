@@ -125,7 +125,7 @@ export default function SiblingsPaymentsPage() {
               <div className="flex items-center gap-4 mt-4 pt-3 border-t border-purple-200/50">
                 <div className="flex items-center gap-1.5 text-xs text-gray-500">
                   <Calendar className="w-4 h-4" />
-                  {new Date(payment.paymentDate).toLocaleDateString('ku-IQ')}
+                  {new Date(payment.paymentDate).toLocaleDateString('en-GB')}
                 </div>
                 {payment.recordedByName && (
                   <div className="flex items-center gap-1.5 text-xs text-gray-500">

@@ -16,6 +16,7 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ku, formatIQD } from '@/lib/translations';
+import { toEnglishNumerals } from '@/lib/text-utils';
 import { useToast } from '@/hooks/use-toast';
 
 interface Book {
@@ -109,6 +110,16 @@ export default function BookSalesPage() {
   const handleSale = () => {
     if (!selectedBook) return;
     
+    // Validate student is selected
+    if (!selectedStudentId) {
+      toast({ 
+        title: 'هەڵە', 
+        description: 'تکایە خوێندکارێک دیاری بکە',
+        variant: 'destructive'
+      });
+      return;
+    }
+    
     let amount = selectedBook.price;
     if (saleType === 'free') amount = 0;
     if (saleType === 'custom') amount = Number(customAmount);
@@ -116,7 +127,7 @@ export default function BookSalesPage() {
     recordSaleMutation.mutate({
       bookId: selectedBook.id,
       amount,
-      studentId: selectedStudentId || undefined,
+      studentId: selectedStudentId,
     });
   };
 
@@ -209,11 +220,13 @@ export default function BookSalesPage() {
                 <div className="animate-fade-in">
                   <label className="text-xs font-bold text-gray-500 block mb-2 mr-1">نرخی دیاریکراو (دینار)</label>
                   <Input 
-                    type="number"
+                    type="text"
+                    inputMode="numeric"
                     value={customAmount}
-                    onChange={(e) => setCustomAmount(e.target.value)}
+                    onChange={(e) => setCustomAmount(toEnglishNumerals(e.target.value))}
                     className="mobile-input-lg"
                     placeholder="نموونە: 1500"
+                    dir="ltr"
                   />
                 </div>
               )}
@@ -311,7 +324,7 @@ export default function BookSalesPage() {
                   <div className="min-w-0">
                     <p className="font-bold text-gray-900 truncate">{sale.book?.title || 'کتێب'}</p>
                     <div className="text-xs text-gray-500 flex items-center gap-2">
-                      <span>{new Date(sale.payment?.paymentDate || Date.now()).toLocaleDateString('ku-IQ')}</span>
+                      <span>{new Date(sale.payment?.paymentDate || Date.now()).toLocaleDateString('en-GB')}</span>
                       {sale.payment?.student?.name ? (
                         <span className="text-primary font-medium truncate">
                           {sale.payment.student.name}

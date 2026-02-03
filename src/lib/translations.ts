@@ -115,6 +115,9 @@ export const ku = {
     paidStatus: "دراوە",
     unpaidStatus: "نەدراوە",
     downloadInfo: "داگرتنی زانیاری",
+    billingPreference: "جۆری پارەدان",
+    semesterBilling: "وەرزی",
+    monthlyBilling: "مانگانە",
   },
 
   // Payments
@@ -127,7 +130,7 @@ export const ku = {
     student: "قوتابی",
     type: "جۆر",
     single: "تاک",
-    sibling: "خوشک و برا (٦ مانگ)",
+    sibling: "خوشک و برا (6 مانگ)",
     siblingGroup: "خوشک و برا",
     monthly: "مانگانە",
     donation: "بەخشین",
@@ -149,7 +152,7 @@ export const ku = {
     voided: "هەڵوەشێنراوە",
     selectStudent: "قوتابی هەڵبژێرە",
     searchStudent: "ناوی قوتابی بنووسە...",
-    amountPlaceholder: "بۆ نمونە: ٢٥٠٠٠",
+    amountPlaceholder: "بۆ نمونە: 25000",
     paymentTypes: {
       single: "پارەدانی تاک",
       family: "پارەدانی خوشک و برا",
@@ -268,19 +271,25 @@ export const ku = {
 // Export as default
 export default ku;
 
-// Helper function to format IQD currency
+// Helper function to format IQD currency with English numerals
 export function formatIQD(amount: number): string {
-  return `${amount.toLocaleString("ar-IQ")} د.ع`;
+  return `${amount.toLocaleString("en-US")} د.ع`;
 }
 
-// Helper function to format date in Kurdish
+// Helper function to format date in Kurdish with English numerals
 export function formatDateKu(date: Date | string): string {
   const d = new Date(date);
-  return d.toLocaleDateString("ku-IQ", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
+  // Format with English numerals but Kurdish month names
+  const day = d.getDate();
+  const year = d.getFullYear();
+  
+  const kurdishMonths = [
+    'کانوونی دووەم', 'شوبات', 'ئازار', 'نیسان', 'ئایار', 'حوزەیران',
+    'تەممووز', 'ئاب', 'ئەیلوول', 'تشرینی یەکەم', 'تشرینی دووەم', 'کانوونی یەکەم'
+  ];
+  const month = kurdishMonths[d.getMonth()];
+  
+  return `${day} ${month} ${year}`;
 }
 
 // Helper for relative time

@@ -37,6 +37,7 @@ model Student {
   joinDate        DateTime? @map("join_date") // When student joined
   notes           String?   // Admin notes
   status          String    @default("active") // "active", "inactive"
+  billingPreference String  @default("semester") @map("billing_preference") // "semester" or "monthly"
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
   isForgiven      Boolean   @default(false) @map("is_forgiven")
@@ -53,6 +54,7 @@ model Payment {
   amount          Int       // Amount in IQD
   paymentDate     DateTime  @map("payment_date")
   paymentType     String    @map("payment_type") // "single", "sibling", "monthly", "donation", "scholarship"
+  billingMode     String    @default("semester") @map("billing_mode") // "semester" or "monthly"
   
   // Subscription period
   periodStart     DateTime  @map("period_start") // e.g., 2026-01-01

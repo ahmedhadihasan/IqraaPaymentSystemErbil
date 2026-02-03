@@ -11,7 +11,8 @@ import {
   Settings,
   LogOut,
   Shield,
-  BookOpen
+  BookOpen,
+  BarChart3
 } from 'lucide-react';
 import { ku } from '@/lib/translations';
 
@@ -23,11 +24,12 @@ export function DesktopSidebar() {
 
   const navItems = [
     { href: '/dashboard', icon: Home, label: ku.nav.dashboard },
-    { href: '/dashboard/students/my-students', icon: Users, label: ku.nav.myStudents },
-    { href: '/dashboard/students', icon: UsersRound, label: ku.nav.allStudents, superAdminOnly: false },
+    { href: '/dashboard/students/my-students', icon: Users, label: ku.nav.myStudents, adminOnly: true },
+    { href: '/dashboard/students', icon: UsersRound, label: ku.nav.allStudents, superAdminOnly: true },
     { href: '/dashboard/payments', icon: CreditCard, label: ku.nav.payments },
     { href: '/dashboard/books', icon: BookOpen, label: ku.nav.books },
     { href: '/dashboard/books/manage', icon: Shield, label: ku.nav.manageBooks, superAdminOnly: true },
+    { href: '/dashboard/reports/collection', icon: BarChart3, label: 'ڕاپۆرتی کۆکراوە', superAdminOnly: true },
     { href: '/dashboard/settings', icon: Settings, label: ku.nav.settings },
   ];
 
@@ -64,6 +66,8 @@ export function DesktopSidebar() {
           
           // Skip if super admin only and user is not super admin
           if (item.superAdminOnly && !isSuperAdmin) return null;
+          // Skip if admin only and user is super admin
+          if ((item as any).adminOnly && isSuperAdmin) return null;
           
           return (
             <Link

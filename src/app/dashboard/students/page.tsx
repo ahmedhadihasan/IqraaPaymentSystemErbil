@@ -20,7 +20,8 @@ import {
   CreditCard,
   Check,
   Download,
-  Users
+  Users,
+  Calendar
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -43,6 +44,7 @@ interface Student {
   classTime: string | null;
   hasPaid?: boolean;
   isForgiven: boolean;
+  billingPreference?: string;
 }
 
 async function fetchStudents(params: { search?: string; gender?: string }) {
@@ -87,20 +89,7 @@ export default function StudentsPage() {
   const [paymentStudent, setPaymentStudent] = useState<Student | null>(null);
   const [paidFilter, setPaidFilter] = useState<'all' | 'paid' | 'unpaid'>('all');
 
-  // Check if we should open payment mode from URL
-  useEffect(() => {
-    if (searchParams.get('showPayment') === 'true') {
-      // Show a toast to guide user
-      toast({ title: 'قوتابییەک هەڵبژێرە بۆ پارەدان' });
-    }
-  }, [searchParams, toast]);
-
-  useEffect(() => {
-    if (initialSearch) {
-      setSearch(initialSearch);
-    }
-  }, [initialSearch]);
-
+  // All hooks must be called before any conditional returns
   const { data: students = [], isLoading, refetch } = useQuery({
     queryKey: ['students', search, genderFilter],
     queryFn: () => fetchStudents({ search, gender: genderFilter }),
@@ -126,21 +115,6 @@ export default function StudentsPage() {
     },
   });
 
-  const handleDelete = (student: Student) => {
-    if (confirm(ku.students.confirmDelete)) {
-      deleteMutation.mutate(student.id);
-    }
-  };
-
-  const handlePayment = (student: Student) => {
-    if (student.hasPaid) {
-      toast({ title: 'ئەم قوتابییە پارەی داوە بۆ ئەم وەرزە', variant: 'destructive' });
-      return;
-    }
-    setPaymentStudent(student);
-    setShowPaymentModal(true);
-  };
-
   const toggleForgivenMutation = useMutation({
     mutationFn: async ({ id, isForgiven }: { id: string; isForgiven: boolean }) => {
       const res = await fetch(`/api/students/${id}`, {
@@ -160,12 +134,77 @@ export default function StudentsPage() {
     },
   });
 
+  const toggleBillingPreferenceMutation = useMutation({
+    mutationFn: async ({ id, billingPreference }: { id: string; billingPreference: string }) => {
+      const res = await fetch(`/api/students/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ billingPreference }),
+      });
+      if (!res.ok) throw new Error('Failed to update student');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['students'] });
+      toast({ title: 'جۆری پارەدان نوێکرایەوە' });
+    },
+    onError: () => {
+      toast({ title: ku.errors.generic, variant: 'destructive' });
+    },
+  });
+
+  // Check if we should open payment mode from URL
+  useEffect(() => {
+    if (searchParams.get('showPayment') === 'true') {
+      toast({ title: 'قوتابییەک هەڵبژێرە بۆ پارەدان' });
+    }
+  }, [searchParams, toast]);
+
+  useEffect(() => {
+    if (initialSearch) {
+      setSearch(initialSearch);
+    }
+  }, [initialSearch]);
+
+  // Event handlers
+  const handleDelete = (student: Student) => {
+    if (confirm(ku.students.confirmDelete)) {
+      deleteMutation.mutate(student.id);
+    }
+  };
+
+  const handlePayment = (student: Student) => {
+    if (student.hasPaid) {
+      toast({ title: 'ئەم قوتابییە پارەی داوە بۆ ئەم وەرزە', variant: 'destructive' });
+      return;
+    }
+    setPaymentStudent(student);
+    setShowPaymentModal(true);
+  };
+
   const handleToggleForgiven = (student: Student) => {
     toggleForgivenMutation.mutate({ 
       id: student.id, 
       isForgiven: !student.isForgiven 
     });
   };
+
+  const handleToggleBillingPreference = (student: Student) => {
+    const newPref = student.billingPreference === 'monthly' ? 'semester' : 'monthly';
+    toggleBillingPreferenceMutation.mutate({ 
+      id: student.id, 
+      billingPreference: newPref 
+    });
+  };
+  
+  // Don't render anything for regular admins
+  if (!isSuperAdmin) {
+    return (
+      <div className="flex items-center justify-center min-h-[50vh]">
+        <p className="text-gray-500">ئەم پەڕەیە تەنها بۆ سوپەر ئەدمین بەردەستە</p>
+      </div>
+    );
+  }
 
   // Filter students by paid status
   const filteredStudents = (students as Student[]).filter((student: Student) => {
@@ -184,21 +223,12 @@ export default function StudentsPage() {
       <div className="flex items-center justify-between mb-2">
         <h1 className="text-xl font-bold text-gray-900">{ku.students.allStudents}</h1>
         <div className="flex items-center gap-3">
-          <Link 
-            href="/dashboard/students/my-students"
-            className="flex items-center gap-1 text-sm text-primary font-medium"
+          <button
+            onClick={() => window.location.href = '/api/students/export'}
+            className="flex items-center gap-1 text-sm text-gray-600 font-medium"
           >
-            <Users className="w-4 h-4" />
-            {ku.nav.myStudents}
-          </Link>
-          {isSuperAdmin && (
-            <button
-              onClick={() => window.location.href = '/api/students/export'}
-              className="flex items-center gap-1 text-sm text-gray-600 font-medium"
-            >
-              <Download className="w-4 h-4" />
-            </button>
-          )}
+            <Download className="w-4 h-4" />
+          </button>
         </div>
       </div>
 
@@ -372,7 +402,8 @@ export default function StudentsPage() {
               onDelete={() => handleDelete(student)}
               onPayment={() => handlePayment(student)}
               onToggleForgiven={() => handleToggleForgiven(student)}
-              isUpdating={toggleForgivenMutation.isPending}
+              onToggleBillingPreference={() => handleToggleBillingPreference(student)}
+              isUpdating={toggleForgivenMutation.isPending || toggleBillingPreferenceMutation.isPending}
             />
           ))
         )}
@@ -437,6 +468,7 @@ function StudentCard({
   onDelete,
   onPayment,
   onToggleForgiven,
+  onToggleBillingPreference,
   isUpdating
 }: { 
   student: Student;
@@ -444,6 +476,7 @@ function StudentCard({
   onDelete: () => void;
   onPayment: () => void;
   onToggleForgiven: () => void;
+  onToggleBillingPreference: () => void;
   isUpdating?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -483,6 +516,9 @@ function StudentCard({
             )}
             {student.isForgiven && (
               <span className="text-xs text-amber-600 font-medium bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">لێخۆشبوو</span>
+            )}
+            {student.billingPreference === 'monthly' && (
+              <span className="text-xs text-amber-600 font-medium bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">مانگانە</span>
             )}
             {student.birthYear && (
               <span className="text-xs text-gray-500">{student.birthYear}</span>
@@ -545,6 +581,18 @@ function StudentCard({
             >
               <Edit className="w-4 h-4" />
               {ku.common.edit}
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); onToggleBillingPreference(); }}
+              disabled={isUpdating}
+              className={`py-2 px-4 rounded-lg font-medium text-sm flex items-center justify-center gap-2 transition-colors ${
+                student.billingPreference === 'monthly' 
+                  ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' 
+                  : 'bg-primary/10 text-primary hover:bg-primary/20'
+              }`}
+            >
+              <Calendar className="w-4 h-4" />
+              {student.billingPreference === 'monthly' ? 'گۆڕین بۆ وەرزی' : 'گۆڕین بۆ مانگانە'}
             </button>
             <button
               onClick={(e) => { e.stopPropagation(); onToggleForgiven(); }}

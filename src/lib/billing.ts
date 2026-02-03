@@ -91,12 +91,12 @@ export function getFamilyPaymentBreakdown(studentCount: number): number[] {
  */
 export function getSuggestedAmounts(): Array<{ value: number; label: string; studentCount: number }> {
   return [
-    { value: 25000, label: 'تاک (١ قوتابی)', studentCount: 1 },
-    { value: 45000, label: '٢ خوشک و برا', studentCount: 2 },
-    { value: 65000, label: '٣ خوشک و برا', studentCount: 3 },
-    { value: 85000, label: '٤ خوشک و برا', studentCount: 4 },
-    { value: 105000, label: '٥ خوشک و برا', studentCount: 5 },
-    { value: 125000, label: '٦ خوشک و برا', studentCount: 6 },
+    { value: 25000, label: 'تاک (1 قوتابی)', studentCount: 1 },
+    { value: 45000, label: '2 خوشک و برا', studentCount: 2 },
+    { value: 65000, label: '3 خوشک و برا', studentCount: 3 },
+    { value: 85000, label: '4 خوشک و برا', studentCount: 4 },
+    { value: 105000, label: '5 خوشک و برا', studentCount: 5 },
+    { value: 125000, label: '6 خوشک و برا', studentCount: 6 },
   ];
 }
 

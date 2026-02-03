@@ -24,16 +24,68 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const search = searchParams.get('search') || '';
     const type = searchParams.get('type') || '';
+    const billingMode = searchParams.get('billingMode') || '';
     const adminId = searchParams.get('adminId') || '';
     const classTime = searchParams.get('classTime') || '';
     const period = searchParams.get('period') || '';
     const startDate = searchParams.get('startDate') || searchParams.get('from') || '';
     const endDate = searchParams.get('endDate') || searchParams.get('to') || '';
     const today = searchParams.get('today') === 'true' || period === 'today';
+    const studentIds = searchParams.get('studentIds') || '';
+
+    // If studentIds is provided, return ALL payments for those students (regardless of who recorded)
+    // This is used by the monthly page to check payment status
+    if (studentIds) {
+      const ids = studentIds.split(',').filter(Boolean);
+      if (ids.length > 0) {
+        const studentPayments = await prisma.payment.findMany({
+          where: {
+            studentId: { in: ids },
+            voided: false,
+          },
+          include: { student: true },
+          orderBy: { createdAt: 'desc' },
+        });
+        return NextResponse.json({ 
+          payments: studentPayments.map(p => ({
+            id: p.id,
+            studentId: p.studentId,
+            amount: p.amount,
+            periodStart: p.periodStart?.toISOString(),
+            periodEnd: p.periodEnd?.toISOString(),
+            monthsCount: p.monthsCount,
+            billingMode: p.billingMode,
+            paymentType: p.paymentType,
+            paymentDate: p.paymentDate.toISOString(),
+          })),
+          totalAmount: studentPayments.reduce((sum, p) => sum + p.amount, 0),
+        });
+      }
+    }
 
     const where: Record<string, unknown> = {
       voided: false,
     };
+
+    if (billingMode === 'monthly') {
+      (where as any).OR = [
+        { billingMode: 'monthly' },
+        {
+          AND: [
+            { billingMode: 'semester' },
+            { monthsCount: { lt: 6 } },
+          ],
+        },
+        {
+          AND: [
+            { billingMode: 'semester' },
+            { periodEnd: { not: SEMESTER.END } },
+          ],
+        },
+      ];
+    } else if (billingMode) {
+      (where as any).billingMode = billingMode;
+    }
 
     const typeFilters = type.split(',').map(t => t.trim()).filter(Boolean);
     if (typeFilters.length > 0) {
@@ -207,6 +259,7 @@ export async function GET(request: NextRequest) {
       amount: p.amount + (childTotals.get(p.id) || 0),
       paymentDate: p.paymentDate.toISOString(),
       paymentType: p.paymentType,
+      billingMode: (p as any).billingMode || 'semester',
       periodStart: p.periodStart.toISOString(),
       periodEnd: p.periodEnd.toISOString(),
       monthsCount: p.monthsCount,
@@ -320,25 +373,65 @@ export async function POST(request: NextRequest) {
       orderBy: { periodEnd: 'desc' },
     });
 
-    const latestByStudent = new Map<string, (typeof recentPayments)[number]>();
+    // For monthly payments, we need to check if the selected months overlap with existing payments
+    // For semester payments, we check if the period overlaps
+    const paymentsByStudent = new Map<string, (typeof recentPayments)>();
     for (const payment of recentPayments) {
-      if (!latestByStudent.has(payment.studentId)) {
-        latestByStudent.set(payment.studentId, payment);
+      if (!paymentsByStudent.has(payment.studentId)) {
+        paymentsByStudent.set(payment.studentId, []);
       }
+      paymentsByStudent.get(payment.studentId)!.push(payment);
     }
 
-    const blockedIds = paymentCheckIds.filter((id) => {
-      const latest = latestByStudent.get(id);
-      return latest && latest.periodEnd && new Date(latest.periodEnd) >= now;
-    });
+    // Check for overlapping payments
+    const blockedIds: string[] = [];
+    const blockedDetails = new Map<string, string[]>();
+    
+    for (const id of paymentCheckIds) {
+      const studentPayments = paymentsByStudent.get(id) || [];
+      const conflicts: string[] = [];
+      
+      for (const payment of studentPayments) {
+        const paymentStart = new Date(payment.periodStart);
+        const paymentEnd = new Date(payment.periodEnd);
+        
+        // Normalize dates to start of day for accurate comparison
+        paymentStart.setHours(0, 0, 0, 0);
+        paymentEnd.setHours(23, 59, 59, 999);
+        
+        const newStart = new Date(periodStart);
+        const newEnd = new Date(periodEnd);
+        newStart.setHours(0, 0, 0, 0);
+        newEnd.setHours(23, 59, 59, 999);
+        
+        // Check if new payment period overlaps with existing payment
+        // Overlap exists if: newStart < existingEnd AND newEnd > existingStart
+        // This allows payments on the same end/start day (e.g., Jan ends, Feb starts)
+        if (newStart < paymentEnd && newEnd > paymentStart) {
+          const startStr = paymentStart.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+          const endStr = paymentEnd.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+          conflicts.push(`${startStr} - ${endStr}`);
+        }
+      }
+      
+      if (conflicts.length > 0) {
+        blockedIds.push(id);
+        blockedDetails.set(id, conflicts);
+      }
+    }
 
     if (blockedIds.length > 0) {
       const blockedStudents = await prisma.student.findMany({
         where: { id: { in: blockedIds } },
-        select: { name: true },
+        select: { id: true, name: true },
       });
+      const details = blockedStudents.map(s => {
+        const periods = blockedDetails.get(s.id) || [];
+        return `${s.name} (${periods.join(', ')})`;
+      }).join(' | ');
+      
       return NextResponse.json(
-        { error: 'بەشداریکردن هێشتا کاریگەرە', details: blockedStudents.map(s => s.name).join('، ') },
+        { error: 'بەشداریکردن بۆ ئەم ماوانە هێشتا کاریگەرە', details },
         { status: 400 }
       );
     }
@@ -351,9 +444,10 @@ export async function POST(request: NextRequest) {
     if (body.paymentType === 'family' && siblingIds.length > 0) {
       // We need to distribute the total amount among students
       // If amount is not provided, calculate standard total first
+      // Allow 0 for free payments
       let totalAmount = totalAmountInput;
       
-      if (!totalAmount) {
+      if (body.amount === undefined || body.amount === null) {
         if (billingMode === 'monthly') {
           totalAmount = (monthsCount || 1) * PRICING.MONTHLY * totalStudents;
         } else {
@@ -394,7 +488,9 @@ export async function POST(request: NextRequest) {
     } else {
       // Single student
       mainAmount = totalAmountInput;
-      if (!mainAmount) {
+      // Only use default pricing if amount was not explicitly provided (undefined/null)
+      // Allow 0 for free payments
+      if (body.amount === undefined || body.amount === null) {
         if (billingMode === 'monthly') {
            mainAmount = (monthsCount || 1) * PRICING.MONTHLY;
         } else {
@@ -418,6 +514,7 @@ export async function POST(request: NextRequest) {
           amount: Math.round(mainAmount),
           paymentDate: new Date(),
           paymentType: body.paymentType || 'single',
+          billingMode,
           periodStart,
           periodEnd,
           monthsCount,
@@ -443,6 +540,7 @@ export async function POST(request: NextRequest) {
                 amount: siblingAmounts[index] || 0,
                 paymentDate: new Date(),
                 paymentType: 'family',
+                billingMode,
                 periodStart,
                 periodEnd,
                 monthsCount,
@@ -476,6 +574,15 @@ export async function POST(request: NextRequest) {
             siblingCount: siblingStudents.length,
           }),
         },
+      });
+
+      // Update student's billing preference if it differs from the payment type
+      const newBillingPreference = billingMode === 'monthly' ? 'monthly' : 'semester';
+      const studentIdsToUpdate = [body.studentId, ...siblingIds].filter(Boolean);
+      
+      await tx.student.updateMany({
+        where: { id: { in: studentIdsToUpdate } },
+        data: { billingPreference: newBillingPreference },
       });
 
       return mainPayment;

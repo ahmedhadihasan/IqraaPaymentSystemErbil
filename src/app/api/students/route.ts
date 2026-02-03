@@ -21,25 +21,27 @@ export async function GET(request: NextRequest) {
     const gender = searchParams.get('gender') || '';
     const status = searchParams.get('status') || 'active';
     const classTime = searchParams.get('classTime') || '';
+    const billingPreference = searchParams.get('billingPreference') || '';
     const myStudentsOnly = searchParams.get('myStudents') === 'true';
     const unpaidOnly = searchParams.get('unpaid') === 'true';
+    const forTransaction = searchParams.get('forTransaction') === 'true';
+    const forgivenOnly = searchParams.get('forgiven') === 'true';
+    const myForgivenOnly = searchParams.get('myForgiven') === 'true';
 
-    // Get admin's assigned class times if filtering by "my students"
+    // Get admin's assigned class times
     let adminClassTimes: string[] = [];
     let adminGender = '';
-    if (myStudentsOnly) {
-      if (session.user.role === 'super_admin') {
-        // Super admin sees all students in "my students" view
-        adminClassTimes = [];
-      } else {
-        const admin = await prisma.admin.findUnique({
-          where: { id: session.user.id },
-          select: { assignedClassTimes: true, assignedGender: true },
-        } as any);
-        adminClassTimes = (admin?.assignedClassTimes || (admin as any)?.assigned_class_times || '')
-          .split(',').filter(Boolean) || [];
-        adminGender = (admin as any)?.assignedGender || (admin as any)?.assigned_gender || '';
-      }
+    const isSuperAdmin = session.user.role === 'super_admin';
+    
+    // Get admin info for regular admins
+    if (!isSuperAdmin) {
+      const admin = await prisma.admin.findUnique({
+        where: { id: session.user.id },
+        select: { assignedClassTimes: true, assignedGender: true },
+      } as any);
+      adminClassTimes = (admin?.assignedClassTimes || (admin as any)?.assigned_class_times || '')
+        .split(',').filter(Boolean) || [];
+      adminGender = (admin as any)?.assignedGender || (admin as any)?.assigned_gender || '';
     }
 
     const where: Record<string, unknown> = {};
@@ -47,20 +49,34 @@ export async function GET(request: NextRequest) {
     if (status) where.status = status;
     if (gender) where.gender = gender;
     if (classTime) where.classTime = classTime;
+    // Don't filter by billingPreference in WHERE clause - show all students in search
+    // if (billingPreference) where.billingPreference = billingPreference;
     
-    // Filter by admin's class times
-    if (myStudentsOnly) {
-      if (session.user.role !== 'super_admin') {
-        if (adminClassTimes.length > 0) {
-          where.classTime = { in: adminClassTimes };
-        } else {
-          // If no classes assigned, return no students
-          where.classTime = 'none_assigned';
-        }
-        
-        if (adminGender) {
-          where.gender = adminGender;
-        }
+    // Filter for forgiven students
+    if (forgivenOnly) {
+      where.isForgiven = true;
+    }
+    
+    // For myForgiven, filter by admin's gender only (not class time, since forgiven students may have no class)
+    if (myForgivenOnly && !isSuperAdmin) {
+      where.isForgiven = true;
+      if (adminGender) {
+        where.gender = adminGender;
+      }
+      // Optionally also include students in admin's class times
+      // This allows admin to see forgiven students that are either in their class OR match their gender
+    }
+    // Filter by admin's class times (for regular myStudents filter, not forgiven)
+    else if (myStudentsOnly && !isSuperAdmin) {
+      if (adminClassTimes.length > 0) {
+        where.classTime = { in: adminClassTimes };
+      } else {
+        // If no classes assigned, return no students
+        where.classTime = 'none_assigned';
+      }
+      
+      if (adminGender) {
+        where.gender = adminGender;
       }
     }
 
@@ -105,13 +121,53 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Remove payments from response for cleaner data
-    const cleanStudents = students.map(({ payments, ...student }) => ({
-      ...student,
-      hasPaid: payments.length > 0 && new Date(payments[0]?.periodEnd || 0) >= SEMESTER.START,
-    }));
+    // Filter forgiven students - for non-super admins, only show forgiven students in their assigned classes
+    // For search/transaction purposes, show students but hide names of forgiven students not in admin's classes
+    let processedStudents = students;
+    
+    if (!isSuperAdmin && !forTransaction) {
+      // When NOT searching for transaction, hide forgiven students not in admin's classes
+      processedStudents = students.filter(student => {
+        if (!(student as any).isForgiven) return true;
+        
+        // If forgiven, check if in admin's assigned classes
+        if (adminClassTimes.length > 0 && !adminClassTimes.includes(student.classTime || '')) {
+          return false;
+        }
+        if (adminGender && student.gender !== adminGender) {
+          return false;
+        }
+        return true;
+      });
+    }
 
-    return NextResponse.json(cleanStudents);
+    // Remove payments from response for cleaner data
+    const cleanStudents = processedStudents.map(({ payments, ...student }) => {
+      const isForgiven = (student as any).isForgiven;
+      
+      // For forgiven students not in admin's classes during transaction search, hide sensitive info
+      let shouldHideName = false;
+      if (forTransaction && !isSuperAdmin && isForgiven) {
+        const notInAdminClass = adminClassTimes.length > 0 && !adminClassTimes.includes(student.classTime || '');
+        const notInAdminGender = Boolean(adminGender) && student.gender !== adminGender;
+        shouldHideName = notInAdminClass || notInAdminGender;
+      }
+      
+      return {
+        ...student,
+        name: shouldHideName ? '*** (قوتابیی لێخۆشبوو)' : student.name,
+        hasPaid: payments.length > 0 && new Date(payments[0]?.periodEnd || 0) >= SEMESTER.START,
+        billingPreference: (student as any).billingPreference || 'semester',
+        isHidden: shouldHideName,
+      };
+    });
+
+    // For forTransaction, filter out hidden forgiven students entirely
+    const finalStudents = forTransaction && !isSuperAdmin 
+      ? cleanStudents.filter(s => !s.isHidden)
+      : cleanStudents;
+
+    return NextResponse.json(finalStudents);
   } catch (error) {
     console.error('Error fetching students:', error);
     return NextResponse.json(
@@ -154,6 +210,7 @@ export async function POST(request: NextRequest) {
         joinDate: body.joinDate ? new Date(body.joinDate) : new Date(),
         notes: body.notes || null,
         status: 'active',
+        billingPreference: body.billingPreference || 'semester',
       },
     });
 

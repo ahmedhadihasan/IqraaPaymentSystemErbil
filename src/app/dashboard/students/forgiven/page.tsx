@@ -31,15 +31,20 @@ interface Student {
   isForgiven: boolean;
 }
 
-async function fetchForgivenStudents() {
-  const res = await fetch('/api/students?status=active');
+async function fetchForgivenStudents(isSuperAdmin: boolean) {
+  // For forgiven students, we need to show students that:
+  // - For superadmin: all forgiven students
+  // - For admin: forgiven students matching their gender (class_time may be empty)
+  const url = isSuperAdmin 
+    ? '/api/students?status=active&forgiven=true' 
+    : '/api/students?status=active&forgiven=true&myForgiven=true';
+  const res = await fetch(url);
   if (!res.ok) throw new Error('Failed to fetch students');
-  const data = await res.json();
-  return data.filter((s: Student) => s.isForgiven);
+  return res.json();
 }
 
 export default function ForgivenStudentsPage() {
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const isSuperAdmin = session?.user?.role === 'super_admin';
@@ -48,8 +53,9 @@ export default function ForgivenStudentsPage() {
   const [classFilter, setClassFilter] = useState<string>('all');
 
   const { data: students = [], isLoading } = useQuery({
-    queryKey: ['students-forgiven'],
-    queryFn: fetchForgivenStudents,
+    queryKey: ['students-forgiven', isSuperAdmin],
+    queryFn: () => fetchForgivenStudents(isSuperAdmin),
+    enabled: status === 'authenticated',
   });
 
   const toggleForgivenMutation = useMutation({

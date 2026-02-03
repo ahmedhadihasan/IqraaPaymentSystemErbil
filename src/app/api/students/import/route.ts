@@ -67,6 +67,7 @@ export async function POST(request: NextRequest) {
     });
 
     const imported: string[] = [];
+    const skipped: string[] = [];
     const errors: string[] = [];
 
     for (let i = 0; i < records.length; i++) {
@@ -90,11 +91,26 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
+        // Check for duplicate: match by normalized name AND phone number
+        const normalizedName = normalizeText(name);
+        const existingStudent = await prisma.student.findFirst({
+          where: {
+            nameNormalized: normalizedName,
+            ...(phone ? { phone: phone } : {}),
+          },
+        });
+
+        // If student already exists, skip
+        if (existingStudent) {
+          skipped.push(name);
+          continue;
+        }
+
         // Create student with normalized name for search
         await prisma.student.create({
           data: {
             name,
-            nameNormalized: normalizeText(name),
+            nameNormalized: normalizedName,
             gender,
             birthYear,
             address,
@@ -114,6 +130,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       imported: imported.length,
+      skipped: skipped.length,
+      skippedNames: skipped.slice(0, 10), // Return first 10 skipped names
       errors: errors.slice(0, 5), // Return first 5 errors only
       totalErrors: errors.length,
     });

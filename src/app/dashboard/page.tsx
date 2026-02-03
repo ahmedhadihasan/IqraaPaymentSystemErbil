@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Users, CreditCard, TrendingUp, AlertCircle, Download, Calendar, UserCheck, UsersRound, Eye, ArrowRight } from 'lucide-react';
+import { Users, CreditCard, TrendingUp, AlertCircle, Download, Calendar, UserCheck, UsersRound, Eye, ArrowRight, BarChart3 } from 'lucide-react';
 import { ku, formatIQD } from '@/lib/translations';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
@@ -154,6 +154,24 @@ export default function DashboardPage() {
           </div>
         </Link>
 
+        {/* SuperAdmin: Collection Report Link */}
+        {data?.isSuperAdmin && (
+          <Link href="/dashboard/reports/collection" className="col-span-2">
+            <div className="mobile-card bg-indigo-50 border border-indigo-200 active:bg-indigo-100 transition-colors">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center">
+                  <BarChart3 className="w-5 h-5 text-indigo-600" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-indigo-800 font-medium">ڕاپۆرتی کۆکراوە</p>
+                  <p className="text-sm text-indigo-600">پشکنینی کۆکراوەکان بەپێی پۆل</p>
+                </div>
+                <ArrowRight className="w-5 h-5 text-indigo-400 rotate-180" />
+              </div>
+            </div>
+          </Link>
+        )}
+
         {/* Today's Payments Quick Stats */}
         <div className="mobile-card">
           <div className="flex items-center gap-3">
@@ -184,8 +202,8 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Super Admin: Collection Split & Periods */}
-      {data?.isSuperAdmin && (
+      {/* Collection Split & Periods - For all users */}
+      {data && (
         <div className="mobile-card">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-bold text-gray-900 flex items-center gap-2">
@@ -320,13 +338,17 @@ export default function DashboardPage() {
                   <div>
                     <p className="font-medium text-gray-900">{payment.studentName}</p>
                     <p className="text-sm text-gray-500">
-                      {new Date(payment.paymentDate).toLocaleDateString('ku-IQ')}
+                      {new Date(payment.paymentDate).toLocaleDateString('en-GB')}
                       {data.isSuperAdmin && payment.recordedByName && (
                         <span className="mr-2 text-primary">• {payment.recordedByName}</span>
                       )}
                     </p>
                   </div>
-                  <span className="font-bold text-green-600">{formatIQD(payment.amount)}</span>
+                  {payment.amount === 0 ? (
+                    <span className="font-bold text-amber-600">بەخۆڕایی</span>
+                  ) : (
+                    <span className="font-bold text-green-600">{formatIQD(payment.amount)}</span>
+                  )}
                 </div>
               </div>
             ))

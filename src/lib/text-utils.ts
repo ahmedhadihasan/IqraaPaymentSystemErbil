@@ -1,6 +1,45 @@
 // Text utilities for Arabic/Kurdish text normalization
 // Handles differences between Arabic and Kurdish letters
 
+// Arabic/Eastern Arabic numerals to English numerals mapping
+const arabicToEnglishNumerals: Record<string, string> = {
+  '٠': '0',
+  '١': '1',
+  '٢': '2',
+  '٣': '3',
+  '٤': '4',
+  '٥': '5',
+  '٦': '6',
+  '٧': '7',
+  '٨': '8',
+  '٩': '9',
+  // Persian/Farsi numerals (also used in Kurdish)
+  '۰': '0',
+  '۱': '1',
+  '۲': '2',
+  '۳': '3',
+  '۴': '4',
+  '۵': '5',
+  '۶': '6',
+  '۷': '7',
+  '۸': '8',
+  '۹': '9',
+};
+
+/**
+ * Convert Arabic/Kurdish numerals to English numerals
+ * Accepts both Arabic (٠-٩) and Persian/Kurdish (۰-۹) numerals
+ */
+export function toEnglishNumerals(text: string): string {
+  if (!text) return '';
+  
+  let result = text;
+  for (const [arabic, english] of Object.entries(arabicToEnglishNumerals)) {
+    result = result.replace(new RegExp(arabic, 'g'), english);
+  }
+  return result;
+}
+
 // Map of Arabic letters to their Kurdish equivalents and vice versa
 const arabicToKurdishMap: Record<string, string> = {
   // Common letter variations
