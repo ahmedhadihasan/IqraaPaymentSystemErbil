@@ -15,12 +15,13 @@ import {
   BarChart3
 } from 'lucide-react';
 import { ku } from '@/lib/translations';
+import { isSuperAdminRole, canViewAdmins } from '@/lib/permissions';
 
 export function DesktopSidebar() {
   const pathname = usePathname();
   const { data: session } = useSession();
 
-  const isSuperAdmin = session?.user?.role === 'super_admin';
+  const isSuperAdmin = isSuperAdminRole(session?.user?.role || '');
 
   const navItems = [
     { href: '/dashboard', icon: Home, label: ku.nav.dashboard },
@@ -85,8 +86,8 @@ export function DesktopSidebar() {
           );
         })}
 
-        {/* Admin management - super admin only */}
-        {isSuperAdmin && (
+        {/* Admin management - super admin roles only */}
+        {canViewAdmins(session?.user?.role || '') && (
           <Link
             href="/dashboard/admins"
             className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from './auth';
 import prisma from './prisma';
+import { isSuperAdminRole, canEdit, canViewAll, hasPermission } from './permissions';
 
 interface AuditLogParams {
   action: string;
@@ -36,11 +37,11 @@ export async function createAuditLog(params: AuditLogParams): Promise<void> {
 }
 
 /**
- * Check if current user is super admin
+ * Check if current user is super admin (any variant)
  */
 export async function isSuperAdmin(): Promise<boolean> {
   const session = await getServerSession(authOptions);
-  return session?.user?.role === 'super_admin';
+  return isSuperAdminRole(session?.user?.role || '');
 }
 
 /**
@@ -82,7 +83,7 @@ export async function requireAuth(): Promise<{ adminId: string; role: string } |
 }
 
 /**
- * Require super admin for API routes
+ * Require super admin for API routes (any super admin variant)
  */
 export async function requireSuperAdmin(): Promise<{ adminId: string } | NextResponse> {
   const auth = await requireAuth();
@@ -91,7 +92,7 @@ export async function requireSuperAdmin(): Promise<{ adminId: string } | NextRes
     return auth;
   }
 
-  if (auth.role !== 'super_admin') {
+  if (!isSuperAdminRole(auth.role)) {
     return NextResponse.json(
       { error: 'Forbidden - Super admin required' },
       { status: 403 }

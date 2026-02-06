@@ -33,6 +33,11 @@ export default function SettingsPage() {
   const [isChangingPassword, setIsChangingPassword] = useState(false);
 
   const handlePasswordChange = async () => {
+    if (!passwordData.currentPassword) {
+      toast({ title: 'تکایە وشەی نهێنی ئێستا بنووسە', variant: 'destructive' });
+      return;
+    }
+
     if (!passwordData.newPassword || passwordData.newPassword.length < 6) {
       toast({ title: 'وشەی نهێنی دەبێت لانیکەم 6 پیت بێت', variant: 'destructive' });
       return;
@@ -48,19 +53,22 @@ export default function SettingsPage() {
       const res = await fetch(`/api/admins/${session?.user?.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: passwordData.newPassword })
+        body: JSON.stringify({
+          currentPassword: passwordData.currentPassword,
+          newPassword: passwordData.newPassword,
+        })
       });
       
       if (!res.ok) {
         const error = await res.json();
-        throw new Error(error.error || 'Failed to change password');
+        throw new Error(error.error || 'هەڵە لە گۆڕینی وشەی نهێنی');
       }
       
-      toast({ title: 'وشەی نهێنی بە سەرکەوتوویی گۆڕدرا' });
+      toast({ title: 'وشەی نهێنی بە سەرکەوتوویی گۆڕدرا ✅' });
       setShowPasswordChange(false);
       setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
     } catch (error: any) {
-      toast({ title: 'هەڵە ڕوویدا', description: error.message, variant: 'destructive' });
+      toast({ title: error.message || 'هەڵە ڕوویدا', variant: 'destructive' });
     } finally {
       setIsChangingPassword(false);
     }
@@ -135,6 +143,18 @@ export default function SettingsPage() {
         
         {showPasswordChange && (
           <div className="mt-4 pt-4 border-t space-y-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1 text-right">
+                وشەی نهێنی ئێستا
+              </label>
+              <Input
+                type="password"
+                placeholder="وشەی نهێنی ئێستا..."
+                value={passwordData.currentPassword}
+                onChange={(e) => setPasswordData({ ...passwordData, currentPassword: e.target.value })}
+                className="text-right"
+              />
+            </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1 text-right">
                 وشەی نهێنی نوێ

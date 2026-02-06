@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { hash } from 'bcryptjs';
 import { z } from 'zod';
+import { isSuperAdminRole, canManageAdmins, canViewAdmins } from '@/lib/permissions';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,7 +12,7 @@ const createAdminSchema = z.object({
   email: z.string().email(),
   password: z.string().min(6),
   fullName: z.string().min(2),
-  role: z.enum(['admin', 'super_admin']).optional(),
+  role: z.enum(['admin', 'admin_view', 'super_admin', 'super_admin_view']).optional(),
   assignedClassTimes: z.string().optional(),
   assignedGender: z.enum(['male', 'female']).optional(),
 });
@@ -22,7 +23,7 @@ const createAdminSchema = z.object({
 export async function GET(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session || session.user?.role !== 'super_admin') {
+    if (!session || !canViewAdmins(session.user?.role || '')) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -77,7 +78,7 @@ export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
     if (!session || session.user?.role !== 'super_admin') {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json({ error: 'Unauthorized - only super admin can create admins' }, { status: 401 });
     }
 
     const body = await request.json();

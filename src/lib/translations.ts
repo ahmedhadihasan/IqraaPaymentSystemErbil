@@ -177,7 +177,9 @@ export const ku = {
     password: "وشەی نهێنی",
     role: "ڕۆڵ",
     admin: "بەڕێوەبەر",
+    adminView: "بەڕێوەبەر (بینین)",
     superAdmin: "سەرپەرشتیار",
+    superAdminView: "سەرپەرشتیار (بینین)",
     lastLogin: "دوایین چوونەژوورەوە",
     active: "چالاک",
     inactive: "ناچالاک",
@@ -190,6 +192,10 @@ export const ku = {
     deactivate: "ناچالاککردن",
     changeRole: "گۆڕینی ڕۆڵ",
     todayCollection: "کۆکراوەی ئەمڕۆ",
+    resetPassword: "ڕیسێتی وشەی نهێنی",
+    manageClasses: "بەڕێوەبردنی پۆلەکان",
+    addClass: "زیادکردنی پۆل",
+    deleteClass: "سڕینەوەی پۆل",
   },
 
   // Common

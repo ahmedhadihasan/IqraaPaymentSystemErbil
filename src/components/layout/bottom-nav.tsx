@@ -13,11 +13,12 @@ import {
   UsersRound
 } from 'lucide-react';
 import { ku } from '@/lib/translations';
+import { isSuperAdminRole } from '@/lib/permissions';
 
 export function BottomNav() {
   const pathname = usePathname();
   const { data: session } = useSession();
-  const isSuperAdmin = session?.user?.role === 'super_admin';
+  const isSuperAdmin = isSuperAdminRole(session?.user?.role || '');
 
   // Different nav items based on role
   const navItems = [

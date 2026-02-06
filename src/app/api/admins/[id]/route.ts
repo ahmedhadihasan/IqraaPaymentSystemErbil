@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { hash } from 'bcryptjs';
+import { isSuperAdminRole, canManageAdmins, canViewAdmins } from '@/lib/permissions';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,7 +16,7 @@ export async function GET(
 ) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session || session.user?.role !== 'super_admin') {
+    if (!session || !canViewAdmins(session.user?.role || '')) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -54,7 +55,7 @@ export async function PUT(
   try {
     const session = await getServerSession(authOptions);
     if (!session || session.user?.role !== 'super_admin') {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json({ error: 'Unauthorized - only super admin can edit' }, { status: 401 });
     }
 
     const body = await request.json();
@@ -136,7 +137,7 @@ export async function DELETE(
   try {
     const session = await getServerSession(authOptions);
     if (!session || session.user?.role !== 'super_admin') {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json({ error: 'Unauthorized - only super admin can delete' }, { status: 401 });
     }
 
     // Can't delete yourself
@@ -173,6 +174,83 @@ export async function DELETE(
     console.error('Error deleting admin:', error);
     return NextResponse.json(
       { error: 'Failed to delete admin' },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * PATCH /api/admins/[id] - Change own password (any logged-in admin)
+ * Requires current password verification
+ */
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // Only allow admins to change their own password, or super_admin to reset anyone's
+    const isSelf = params.id === session.user.id;
+    const isSuperAdmin = session.user.role === 'super_admin'; // Only full super_admin can reset others
+
+    if (!isSelf && !isSuperAdmin) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const body = await request.json();
+    const { currentPassword, newPassword } = body;
+
+    if (!newPassword || newPassword.length < 6) {
+      return NextResponse.json(
+        { error: 'وشەی نهێنی نوێ دەبێت لانیکەم ٦ پیت بێت' },
+        { status: 400 }
+      );
+    }
+
+    const admin = await prisma.admin.findUnique({
+      where: { id: params.id },
+    });
+
+    if (!admin) {
+      return NextResponse.json({ error: 'Admin not found' }, { status: 404 });
+    }
+
+    // If changing own password, verify current password
+    if (isSelf) {
+      if (!currentPassword) {
+        return NextResponse.json(
+          { error: 'وشەی نهێنی ئێستا پێویستە' },
+          { status: 400 }
+        );
+      }
+
+      const { compare } = await import('bcryptjs');
+      const isCurrentValid = await compare(currentPassword, admin.passwordHash);
+      if (!isCurrentValid) {
+        return NextResponse.json(
+          { error: 'وشەی نهێنی ئێستا هەڵەیە' },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Super admin resetting someone else's password doesn't need current password
+
+    const newHash = await hash(newPassword, 12);
+    await prisma.admin.update({
+      where: { id: params.id },
+      data: { passwordHash: newHash },
+    });
+
+    return NextResponse.json({ success: true, message: 'وشەی نهێنی بە سەرکەوتوویی گۆڕدرا' });
+  } catch (error) {
+    console.error('Error changing password:', error);
+    return NextResponse.json(
+      { error: 'هەڵە لە گۆڕینی وشەی نهێنی' },
       { status: 500 }
     );
   }

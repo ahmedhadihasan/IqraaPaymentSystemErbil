@@ -28,7 +28,7 @@ export const PAYMENT_TYPES = {
   SCHOLARSHIP: 'scholarship',
 } as const;
 
-// Class times
+// Class times (static defaults - also stored dynamically in SystemConfig)
 export const CLASS_TIMES = [
   'saturday_morning',
   'saturday_evening', 
@@ -40,7 +40,37 @@ export const CLASS_TIMES = [
   'thursday_night',
 ] as const;
 
-export type ClassTime = typeof CLASS_TIMES[number];
+export type ClassTime = string; // Now dynamic, not just the static ones
+
+// Kurdish labels for class time components
+export const DAY_LABELS: Record<string, string> = {
+  saturday: 'شەممە',
+  sunday: 'یەکشەممە',
+  monday: 'دووشەممە',
+  tuesday: 'سێشەممە',
+  wednesday: 'چوارشەممە',
+  thursday: 'پێنجشەممە',
+  friday: 'هەینی',
+};
+
+export const PERIOD_LABELS: Record<string, string> = {
+  morning: 'بەیانی',
+  evening: 'ئێوارە',
+  night: 'شەو',
+};
+
+// Generate a Kurdish label from class time id
+export function getClassTimeLabel(classTimeId: string): string {
+  const parts = classTimeId.split('_');
+  if (parts.length >= 2) {
+    const day = parts[0];
+    const period = parts.slice(1).join('_');
+    const dayLabel = DAY_LABELS[day] || day;
+    const periodLabel = PERIOD_LABELS[period] || period;
+    return `${dayLabel} ${periodLabel}`;
+  }
+  return classTimeId;
+}
 
 // Semester dates
 export const SEMESTER = {
